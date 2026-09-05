@@ -7,11 +7,6 @@ const state = {
   rankingType: "today",
   trendDays: 7,
   safety: { builtin_terms: [], custom_terms: [] },
-  selectedSafetyGroup: "",
-  groupPolicy: null,
-  groupPolicyLoading: false,
-  groupPolicySaving: false,
-  groupPolicyRequestId: 0,
   groupPolicies: [], selectedPolicyGroupId: "", policyQuery: "", policyDraft: null,
   blacklist: [],
   thumbs: {},
@@ -70,13 +65,6 @@ const els = {
   builtinTerms: $("builtinTerms"),
   builtinCount: $("builtinCount"),
   builtinSearch: $("builtinSearch"),
-  safetyGroupInput: $("safetyGroupInput"),
-  safetyGroupOptions: $("safetyGroupOptions"),
-  generalOnlyToggle: $("generalOnlyToggle"),
-  builtinTermsToggle: $("builtinTermsToggle"),
-  groupPolicyStatus: $("groupPolicyStatus"),
-  groupPolicySave: $("groupPolicySave"),
-  groupPolicyError: $("groupPolicyError"),
   safetyStatusSummary: $("safetyStatusSummary"),
   customTerms: $("customTerms"),
   customCount: $("customCount"),
@@ -582,7 +570,6 @@ function renderSafety() {
       }
     });
   });
-  renderSafetyPolicy();
 }
 
 function renderSafetyError() {
@@ -606,11 +593,7 @@ async function reloadPolicies() { const r = await apiGet("content-safety/group-p
 
 async function reloadSafety() {
   try {
-    const params = state.selectedSafetyGroup
-      ? { group_id: state.selectedSafetyGroup }
-      : {};
-    state.safety = await apiGet("content-safety", params);
-    state.groupPolicy = state.safety.group_policy || null;
+    state.safety = await apiGet("content-safety");
     state.loaded.safety = true;
     state.overview.custom_term_count = state.safety.custom_terms?.length || 0;
     renderSafety();

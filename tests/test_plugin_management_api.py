@@ -10,12 +10,17 @@ from quart import Quart
 from checkin import CheckinStore
 from pixiv.index import ImageIndexStore
 from plugin_api.api import PluginWebApi
+from group_safety import GroupSafetyService
 
 
 def build_plugin(tmp: str):
     plugin = SimpleNamespace()
     plugin.data_dir = Path(tmp)
     plugin.checkin_store = CheckinStore(tmp)
+    class Config(dict):
+        def save_config(self): pass
+    plugin.config = Config(group_content_safety_policies=[], group_content_safety_policies_migrated=True)
+    plugin.group_safety_service = GroupSafetyService(plugin.config)
     plugin.image_index = ImageIndexStore(tmp)
     plugin.client = None
     plugin.downloader = None
