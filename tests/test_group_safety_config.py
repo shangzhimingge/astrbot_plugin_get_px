@@ -45,7 +45,7 @@ async def test_initialize_invalid_nonempty_config_skips_legacy_and_logs(monkeypa
     service = GroupSafetyService(config)
     await service.initialize(legacy)
     assert legacy.calls == 0
-    assert messages
+    assert any("config" in msg and "entry 0" in msg and "group_id is required" in msg for msg in messages)
     assert await service.list_policies() == []
     assert config[MIGRATION_KEY] is True
 
@@ -56,7 +56,7 @@ async def test_initialize_legacy_read_failure_logs_and_keeps_strict(monkeypatch)
     config = Config({CONFIG_KEY: [], MIGRATION_KEY: False})
     service = GroupSafetyService(config)
     await service.initialize(TrackingLegacy(error=RuntimeError("broken")))
-    assert messages
+    assert any("legacy: read failed error_type=RuntimeError" in msg for msg in messages)
     assert config[MIGRATION_KEY] is False
     assert (await service.get_policy("200"))["is_default"] is True
     assert await service.list_policies() == []
@@ -67,17 +67,20 @@ async def test_initialize_fail_once_rolls_back_then_retries_incremental(monkeypa
     monkeypatch.setattr("group_safety.logger.warning", messages.append)
     config = FailOnceConfig({CONFIG_KEY: [], MIGRATION_KEY: False})
     service = GroupSafetyService(config)
-    legacy = TrackingLegacy([{"group_id": "200", "general_only_enabled": False, "builtin_terms_enabled": True}])
+    legacy = TrackingLegacy([
+        {"group_id": "200", "general_only_enabled": False, "builtin_terms_enabled": True},
+        {"group_id": "100", "general_only_enabled": True, "builtin_terms_enabled": False},
+    ])
     await service.initialize(legacy)
     assert legacy.calls == 1
     assert config[CONFIG_KEY] == [] and config[MIGRATION_KEY] is False
     assert (await service.get_policy("200"))["is_default"] is True
-    assert messages
-    legacy.records.append({"group_id": "100", "general_only_enabled": True, "builtin_terms_enabled": False})
+    assert any("legacy: save failed error_type=RuntimeError" in msg for msg in messages)
     await service.initialize(legacy)
     assert legacy.calls == 2
     assert config[MIGRATION_KEY] is True
-    assert [p["group_id"] for p in await service.list_policies()] == ["100", "200"]
+    policies = await service.list_policies()
+    assert [(p["group_id"], p["general_only_enabled"], p["builtin_terms_enabled"], p["is_default"]) for p in policies] == [("100", True, False, False), ("200", False, True, False)]
 
 def test_explicit_strict_is_retained():
     entries, _ = normalize_policy_entries([{"group_id": "1", "general_only_enabled": True, "builtin_terms_enabled": True}])

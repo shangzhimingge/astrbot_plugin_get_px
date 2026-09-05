@@ -79,3 +79,45 @@ def test_policy_saved_time_and_focus_fallback():
 def test_policy_css_contract():
     css=(PAGE_DIR/'styles.css').read_text(encoding='utf-8')
     assert css.count('{')==css.count('}') and ':focus-visible' in css and ':disabled' in css and 'max-width: 900px' in css and 'max-width: 620px' in css
+
+def _function_body(source, name):
+    start = source.index(f"function {name}")
+    end = source.find("\nfunction ", start + 10)
+    return source[start:] if end < 0 else source[start:end]
+
+def test_policy_named_functions_select_and_reload():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    for name in ("selectPolicy", "reloadPolicies", "addGroupPolicy", "saveGroupPolicy", "deleteGroupPolicy"):
+        assert f"function {name}" in source
+    assert "selectPolicy(" in _function_body(source, "reloadPolicies")
+    assert "selectPolicy(" in _function_body(source, "addGroupPolicy")
+    assert "selectPolicy(" in _function_body(source, "saveGroupPolicy")
+
+def test_policy_busy_paths_render_after_finally():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    for name in ("addGroupPolicy", "saveGroupPolicy", "deleteGroupPolicy"):
+        body=_function_body(source,name)
+        assert "state.policy" in body and "finally" in body and "renderPolicyManager()" in body
+
+def test_policy_controls_are_disabled_while_busy():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    body=_function_body(source,"renderPolicyManager")
+    for token in ("policySearch", "policyAddBtn", "policyGeneralToggle", "policyBuiltinToggle", "policySaveBtn", "policyDeleteBtn", "policyAddInput", "policyAddCancel", "aria-busy"):
+        assert token in body
+
+def test_policy_snapshot_restore_and_saved_time_reset():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    assert "state.policyDraft=snapshot" in source
+    assert "state.policySavedAt = 0" in _function_body(source,"selectPolicy")
+    assert "state.policySavedAt=Date.now()" in _function_body(source,"saveGroupPolicy")
+
+def test_policy_toggle_draft_and_delete_neighbor():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    assert "policyDraft.general_only_enabled" in source and "policyDraft.builtin_terms_enabled" in source
+    assert "state.groupPolicies[0]?.group_id" in _function_body(source,"deleteGroupPolicy")
+
+def test_policy_css_exact_interaction_selectors():
+    css=(PAGE_DIR/'styles.css').read_text(encoding='utf-8')
+    assert ".policy-list-item:focus-visible" in css
+    assert ".policy-list-item:disabled" in css
+    assert '#policyEditorForm[aria-busy="true"]' in css

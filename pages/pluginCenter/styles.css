@@ -1508,6 +1508,9 @@ dialog p.member-history-note {
 #policyList { display:grid; gap:.5rem; margin-top:.75rem; }
 #policyEditorForm { display:grid; gap:.75rem; }
 #policyEditorForm[aria-busy="true"] { opacity:.72; }
+#policyEditorForm[aria-busy="true"] .dialog-actions { pointer-events:none; }
+.policy-list-item:focus-visible { outline:3px solid var(--border-focus); outline-offset:2px; }
+.policy-list-item:disabled { cursor:not-allowed; opacity:.55; }
 #policyEditorForm button:disabled, #policyEditorForm input:disabled, #policySearch:disabled, #policyAddBtn:disabled { cursor:not-allowed; opacity:.55; }
 #policyList button:focus-visible, #policyAddBtn:focus-visible, #policyEditorForm button:focus-visible, #policySearch:focus-visible { outline:3px solid var(--border-focus); outline-offset:2px; }
 @media (max-width:900px) { .policies-layout { grid-template-columns:1fr; } }

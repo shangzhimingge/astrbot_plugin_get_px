@@ -90,7 +90,7 @@ const els = {
   policyList: $("policyList"), policySearch: $("policySearch"), policyAddBtn: $("policyAddBtn"),
   policyAddDialog: $("policyAddDialog"), policyAddForm: $("policyAddForm"), policyAddInput: $("policyAddInput"),
   policyAddCancel: $("policyAddCancel"), policyEditorForm: $("policyEditorForm"), policyGroupId: $("policyGroupId"),
-  policyGeneralToggle: $("policyGeneralToggle"), policyBuiltinToggle: $("policyBuiltinToggle"), policyDeleteBtn: $("policyDeleteBtn"), policyError: $("policyError"), policyEditorStatus: $("policyEditorStatus"), policySavedAt: $("policySavedAt"),
+  policyGeneralToggle: $("policyGeneralToggle"), policyBuiltinToggle: $("policyBuiltinToggle"), policySaveBtn: $("policySaveBtn"), policyDeleteBtn: $("policyDeleteBtn"), policyError: $("policyError"), policyEditorStatus: $("policyEditorStatus"), policySavedAt: $("policySavedAt"),
 };
 
 function escapeHtml(value) {
@@ -584,11 +584,11 @@ function renderPolicyManager() {
   if (!els.policyList) return;
   const q = (state.policyQuery || "").toLowerCase();
   const rows = state.groupPolicies.filter(p => String(p.group_id).toLowerCase().includes(q));
-  els.policyList.innerHTML = rows.map(p => `<button type="button" class="policy-list-item ${p.group_id === state.selectedPolicyGroupId ? "active" : ""}" data-policy-group="${escapeHtml(p.group_id)}"><strong>${escapeHtml(p.group_id)}</strong><small>${p.general_only_enabled ? "仅普通" : "混合分级"} · ${p.builtin_terms_enabled ? "内置词开" : "内置词关"}</small></button>`).join("") || '<div class="empty">暂无群策略</div>';
+  const busy = state.policyLoading || state.policySaving || state.policyDeleting;
+  els.policyList.innerHTML = rows.map(p => `<button type="button" class="policy-list-item ${p.group_id === state.selectedPolicyGroupId ? "active" : ""}" data-policy-group="${escapeHtml(p.group_id)}"${busy ? " disabled" : ""}><strong>${escapeHtml(p.group_id)}</strong><small>${p.general_only_enabled ? "仅普通" : "混合分级"} · ${p.builtin_terms_enabled ? "内置词开" : "内置词关"}</small></button>`).join("") || '<div class="empty">暂无群策略</div>';
   els.policyList.querySelectorAll("[data-policy-group]").forEach(b => b.addEventListener("click", () => selectPolicy(b.dataset.policyGroup)));
   const p = state.groupPolicies.find(x => x.group_id === state.selectedPolicyGroupId);
-  const busy = state.policyLoading || state.policySaving || state.policyDeleting;
-  [els.policySearch, els.policyAddBtn, els.policyGeneralToggle, els.policyBuiltinToggle, els.policySaveBtn, els.policyDeleteBtn].forEach((control) => { if (control) control.disabled = busy || (control === els.policyDeleteBtn && !p); });
+  [els.policySearch, els.policyAddBtn, els.policyGeneralToggle, els.policyBuiltinToggle, els.policySaveBtn, els.policyDeleteBtn, els.policyAddInput, els.policyAddCancel].forEach((control) => { if (control) control.disabled = busy || (control === els.policyDeleteBtn && !p); });
   els.policyEditorForm?.setAttribute("aria-busy", String(busy));
   if (p) { els.policyGroupId.value = p.group_id; els.policyGeneralToggle.checked = (state.policyDraft || p).general_only_enabled; els.policyBuiltinToggle.checked = (state.policyDraft || p).builtin_terms_enabled; els.policyEditorStatus.textContent = busy ? "正在处理…" : "已保存"; els.policySavedAt.textContent = state.policySavedAt || p.updated_at || "尚无记录"; } else { els.policyGroupId.value = ""; els.policyGeneralToggle.checked = true; els.policyBuiltinToggle.checked = true; els.policyEditorStatus.textContent = "请选择群"; els.policyDeleteBtn.disabled = true; els.policySavedAt.textContent = "尚无记录"; }
 }
