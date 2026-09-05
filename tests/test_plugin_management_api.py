@@ -71,6 +71,7 @@ async def test_group_policy_crud_routes_and_rollback() -> None:
             second=await (await c.post("/content-safety/group-policy/remove",json={"group_id":"1"})).get_json(); assert second["removed"] is False
             assert (await c.post("/content-safety/group-policy",json={"group_id":[],"general_only_enabled":True,"builtin_terms_enabled":True})).status_code==400
             assert (await c.get("/content-safety")).status_code==200
+        plugin.image_index.close()
 
 
 @pytest.mark.asyncio
