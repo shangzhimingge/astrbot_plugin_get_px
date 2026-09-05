@@ -54,7 +54,7 @@ class FakeDownloader:
         return str(path), len(payload)
 
 @pytest.mark.asyncio
-async def test_group_policy_crud_routes_and_rollback() -> None:
+async def _exercise_group_policy_http() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         plugin = build_plugin(tmp); api = PluginWebApi(plugin, plugin_name="x", log_prefix="[x]", internal_error_message="internal")
         app = Quart(__name__)
@@ -74,27 +74,27 @@ async def test_group_policy_crud_routes_and_rollback() -> None:
         plugin.image_index.close()
 
 @pytest.mark.asyncio
-async def test_list_is_fully_sorted_and_retains_explicit_strict(): await test_group_policy_crud_routes_and_rollback()
+async def test_list_is_fully_sorted_and_retains_explicit_strict(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_update_replaces_existing_without_duplicate(): await test_group_policy_crud_routes_and_rollback()
+async def test_update_replaces_existing_without_duplicate(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_remove_returns_strict_default_and_is_idempotent(): await test_group_policy_crud_routes_and_rollback()
+async def test_remove_returns_strict_default_and_is_idempotent(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_upsert_rejects_invalid_payloads(): await test_group_policy_crud_routes_and_rollback()
+async def test_upsert_rejects_invalid_payloads(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_list_without_service(): await test_group_policy_crud_routes_and_rollback()
+async def test_group_policy_list_returns_503_without_service(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_get_without_service(): await test_group_policy_crud_routes_and_rollback()
+async def test_group_policy_get_returns_503_without_service(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_update_without_service(): await test_group_policy_crud_routes_and_rollback()
+async def test_group_policy_update_returns_503_without_service(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_remove_without_service(): await test_group_policy_crud_routes_and_rollback()
+async def test_group_policy_remove_returns_503_without_service(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_global_content_safety_remains_200_without_group_service(): await test_group_policy_crud_routes_and_rollback()
+async def test_global_content_safety_remains_200_without_group_service(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_upsert_save_failure_rolls_back_config_and_runtime(): await test_group_policy_crud_routes_and_rollback()
+async def test_upsert_save_failure_rolls_back_config_and_runtime(): await _exercise_group_policy_http()
 @pytest.mark.asyncio
-async def test_remove_save_failure_rolls_back_config_and_runtime(): await test_group_policy_crud_routes_and_rollback()
+async def test_remove_save_failure_rolls_back_config_and_runtime(): await _exercise_group_policy_http()
 
 
 @pytest.mark.asyncio
@@ -421,5 +421,6 @@ def test_management_api_unregisters_only_owned_routes() -> None:
     assert context.registered_web_apis == [foreign_registration]
     api.unregister()
     assert context.registered_web_apis == [foreign_registration]
+
 
 
