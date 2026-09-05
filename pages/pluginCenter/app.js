@@ -552,6 +552,7 @@ function readMemberForm() {
 }
 
 function renderSafetyPolicy() {
+  if (!els.safetyGroupOptions) return;
   const policy = state.groupPolicy || {
     general_only_enabled: true,
     builtin_terms_enabled: true,
