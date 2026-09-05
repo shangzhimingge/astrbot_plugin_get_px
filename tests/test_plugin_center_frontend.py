@@ -62,3 +62,20 @@ def test_plugin_center_exposes_independent_group_safety_switches() -> None:
     assert 'apiPost("content-safety/group-policy"' in source
     assert "policySaving" in source or "policyDeleteBtn" in source
     assert "安全策略已锁定" not in html
+
+def test_policy_state_machine_fields_and_busy_paths():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    for token in ['policyLoading','policySaving','policyDeleting','policySnapshot','policyDraft','selectPolicy(']: assert token in source
+
+def test_policy_crud_paths_are_present():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    assert source.count('content-safety/group-policy') >= 2
+    assert 'content-safety/group-policy/remove' in source
+
+def test_policy_saved_time_and_focus_fallback():
+    html=(PAGE_DIR/'index.html').read_text(encoding='utf-8'); source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    assert 'id="policySavedAt"' in html and 'requestAnimationFrame' in source and 'policyAddBtn.focus' in source
+
+def test_policy_css_contract():
+    css=(PAGE_DIR/'styles.css').read_text(encoding='utf-8')
+    assert css.count('{')==css.count('}') and ':focus-visible' in css and ':disabled' in css and 'max-width: 900px' in css and 'max-width: 620px' in css
