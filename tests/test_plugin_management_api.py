@@ -114,10 +114,13 @@ async def test_update_replaces_existing_without_duplicate(group_policy_harness):
     assert listed["group_policies"][0]["builtin_terms_enabled"] is False
     response_payload = await response.get_json()
     assert response_payload["group_policy"]["group_id"] == "1"
+    assert response_payload["group_policy"]["general_only_enabled"] is False
+    assert response_payload["group_policy"]["builtin_terms_enabled"] is False
     assert listed["group_policies"][0]["group_id"] == "1"
     assert len(group_policy_harness.plugin.config[CONFIG_KEY]) == 1
     assert group_policy_harness.plugin.config[CONFIG_KEY][0]["group_id"] == "1"
     assert group_policy_harness.plugin.config[CONFIG_KEY][0]["general_only_enabled"] is False
+    assert group_policy_harness.plugin.config[CONFIG_KEY][0]["builtin_terms_enabled"] is False
     service_policy = await group_policy_harness.plugin.group_safety_service.list_policies()
     assert len(service_policy) == 1 and service_policy[0]["group_id"] == "1"
     assert service_policy[0]["general_only_enabled"] is False and service_policy[0]["builtin_terms_enabled"] is False

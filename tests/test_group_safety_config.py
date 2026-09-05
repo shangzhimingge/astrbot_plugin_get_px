@@ -90,7 +90,10 @@ async def test_initialize_fail_once_rolls_back_then_retries_incremental(monkeypa
     await service.initialize(legacy)
     assert legacy.calls == 1
     assert config[CONFIG_KEY] == [] and config[MIGRATION_KEY] is False
-    assert (await service.get_policy("200"))["is_default"] is True
+    first_policy = await service.get_policy("200")
+    assert first_policy["general_only_enabled"] is True
+    assert first_policy["builtin_terms_enabled"] is True
+    assert first_policy["is_default"] is True
     assert any("legacy: save failed error_type=RuntimeError" in msg for msg in messages)
     await service.initialize(legacy)
     assert legacy.calls == 2

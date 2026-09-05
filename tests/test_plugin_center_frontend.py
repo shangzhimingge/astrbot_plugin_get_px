@@ -139,3 +139,31 @@ def test_policy_css_exact_interaction_selectors():
     assert ".policy-list-item:focus-visible" in css
     assert ".policy-list-item:disabled" in css
     assert '#policyEditorForm[aria-busy="true"]' in css
+
+def test_policy_reload_functions_have_precise_loading_and_selection_flow():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    reload_all=_function_body(source,"reloadAll")
+    reload_policies=_function_body(source,"reloadPolicies")
+    assert "state.policyLoading = true" in reload_all
+    assert "state.policyLoading = false" in reload_all
+    assert "renderPolicyManager()" in reload_all
+    assert "selectPolicy(" in reload_all
+    assert "if (state.policyLoading) return" in reload_policies
+    assert "state.policyLoading=true" in reload_policies
+    assert "state.policyLoading=false" in reload_policies
+    assert "renderPolicyManager()" in reload_policies
+    assert "selectPolicy(" in reload_policies
+
+def test_policy_add_submit_and_busy_controls_are_precise():
+    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
+    render=_function_body(source,"renderPolicyManager")
+    add=_function_body(source,"addGroupPolicy")
+    assert 'policyAddSubmit: $("policyAddSubmit")' in source
+    assert 'els.policyAddSubmit' in render and 'state.policySaving' in render
+    assert 'policyAddForm?.setAttribute("aria-busy", String(state.policySaving))' in render
+    assert "if (state.policySaving) return" in add
+    assert "if (!groupId || state.policySaving) return" in source
+    assert "els.policyGeneralToggle.disabled = busy || !p" in render
+    assert "els.policyBuiltinToggle.disabled = busy || !p" in render
+    assert "els.policySaveBtn.disabled = busy || !p" in render
+    assert "els.policyDeleteBtn.disabled = busy || !p" in render
