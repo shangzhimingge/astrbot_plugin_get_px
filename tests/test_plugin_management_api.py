@@ -53,6 +53,25 @@ class FakeDownloader:
         path.write_bytes(payload)
         return str(path), len(payload)
 
+@pytest.mark.asyncio
+async def test_group_policy_crud_routes_and_rollback() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = build_plugin(tmp); api = PluginWebApi(plugin, plugin_name="x", log_prefix="[x]", internal_error_message="internal")
+        app = Quart(__name__)
+        app.add_url_rule("/content-safety", view_func=api.content_safety, methods=["GET"])
+        app.add_url_rule("/content-safety/group-policy", view_func=api.content_safety_group_policy, methods=["POST"])
+        app.add_url_rule("/content-safety/group-policies", view_func=api.content_safety_group_policies, methods=["GET"])
+        app.add_url_rule("/content-safety/group-policy/remove", view_func=api.content_safety_group_policy_remove, methods=["POST"])
+        async with app.test_app():
+            c=app.test_client()
+            await c.post("/content-safety/group-policy",json={"group_id":"2","general_only_enabled":True,"builtin_terms_enabled":True})
+            await c.post("/content-safety/group-policy",json={"group_id":"1","general_only_enabled":False,"builtin_terms_enabled":True})
+            listed=await (await c.get("/content-safety/group-policies")).get_json(); assert listed["group_policies"][0]["group_id"]=="1"
+            removed=await (await c.post("/content-safety/group-policy/remove",json={"group_id":"1"})).get_json(); assert removed["removed"] and removed["group_policy"]["is_default"]
+            second=await (await c.post("/content-safety/group-policy/remove",json={"group_id":"1"})).get_json(); assert second["removed"] is False
+            assert (await c.post("/content-safety/group-policy",json={"group_id":[],"general_only_enabled":True,"builtin_terms_enabled":True})).status_code==400
+            assert (await c.get("/content-safety")).status_code==200
+
 
 @pytest.mark.asyncio
 async def test_management_overview_omits_legacy_cleanup_stats() -> None:
