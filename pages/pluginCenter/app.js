@@ -551,69 +551,6 @@ function readMemberForm() {
   return values;
 }
 
-function renderSafetyPolicy() {
-  if (!els.safetyGroupOptions) return;
-  const policy = state.groupPolicy || {
-    general_only_enabled: true,
-    builtin_terms_enabled: true,
-    is_default: true,
-  };
-  const hasGroup = Boolean(state.selectedSafetyGroup);
-  els.safetyGroupOptions.innerHTML = state.groups.map((group) => (
-    `<option value="${escapeHtml(group.group_id)}">${escapeHtml(group.group_name || group.group_id)}</option>`
-  )).join("");
-  els.generalOnlyToggle.checked = Boolean(policy.general_only_enabled);
-  els.builtinTermsToggle.checked = Boolean(policy.builtin_terms_enabled);
-  const busy = state.groupPolicyLoading || state.groupPolicySaving;
-  els.safetyGroupInput.disabled = state.groupPolicySaving;
-  els.generalOnlyToggle.disabled = !hasGroup || busy;
-  els.builtinTermsToggle.disabled = !hasGroup || busy;
-  els.groupPolicySave.disabled = !hasGroup || busy;
-  els.groupPolicySave.setAttribute("aria-busy", String(state.groupPolicySaving));
-  els.groupPolicySave.textContent = state.groupPolicySaving ? "正在保存…" : "保存群策略";
-  els.groupPolicyStatus.textContent = !hasGroup
-    ? "请选择群"
-    : state.groupPolicyLoading
-      ? "正在读取…"
-      : policy.is_default
-        ? "使用默认严格策略"
-        : `已单独配置 · ${formatDate(policy.updated_at)}`;
-  els.safetyStatusSummary.textContent = !hasGroup
-    ? "私聊固定使用严格策略"
-    : `${state.selectedSafetyGroup}：${policy.general_only_enabled ? "仅普通分级" : "普通/R18 混合"}，${policy.builtin_terms_enabled ? "内置词开启" : "内置词关闭"}`;
-}
-
-async function loadGroupSafetyPolicy(groupId) {
-  const normalized = String(groupId || "").trim();
-  state.selectedSafetyGroup = normalized;
-  state.groupPolicy = null;
-  state.groupPolicyRequestId += 1;
-  const requestId = state.groupPolicyRequestId;
-  els.groupPolicyError.textContent = "";
-  if (!normalized) {
-    renderSafetyPolicy();
-    return;
-  }
-  state.groupPolicyLoading = true;
-  renderSafetyPolicy();
-  try {
-    const result = await apiGet("content-safety", { group_id: normalized });
-    if (requestId !== state.groupPolicyRequestId || normalized !== state.selectedSafetyGroup) return;
-    state.safety = result;
-    state.groupPolicy = result.group_policy || null;
-    renderSafety();
-  } catch (error) {
-    if (requestId !== state.groupPolicyRequestId || normalized !== state.selectedSafetyGroup) return;
-    els.groupPolicyError.textContent = error.message || "群策略读取失败";
-    throw error;
-  } finally {
-    if (requestId === state.groupPolicyRequestId) {
-      state.groupPolicyLoading = false;
-      renderSafetyPolicy();
-    }
-  }
-}
-
 function renderSafety() {
   const query = els.builtinSearch.value.trim().toLocaleLowerCase("zh-CN");
   const builtin = (state.safety.builtin_terms || []).filter((term) =>
@@ -1036,4 +973,5 @@ async function start() {
 }
 
 start();
+
 

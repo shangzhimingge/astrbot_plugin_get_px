@@ -46,7 +46,8 @@ class GroupSafetyService:
         self.config[CONFIG_KEY], self.config[MIGRATION_KEY] = [dict(x) for x in entries], migrated
         try:
             saver = getattr(self.config, "save_config", None)
-            if callable(saver): saver()
+            if not callable(saver): raise RuntimeError("config.save_config is required")
+            saver()
         except Exception:
             self.config[CONFIG_KEY], self.config[MIGRATION_KEY] = old, old_migrated
             raise

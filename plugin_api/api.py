@@ -320,18 +320,14 @@ class PluginWebApi:
     async def content_safety(self):
         if self.plugin.image_index is None:
             return self._unavailable("内容安全数据尚未初始化")
-        if self.plugin.checkin_store is None:
-            return self._unavailable("群内容安全设置尚未初始化")
         try:
             custom_terms = await self.plugin.image_index.list_safety_terms()
             group_id = str(request.args.get("group_id", "") or "").strip()
             group_policy = None
             if group_id:
                 service = getattr(self.plugin, "group_safety_service", None)
-                if service is not None:
-                    group_policy = await service.get_policy(group_id)
-                else:
-                    group_policy = await self.plugin.checkin_store.get_group_content_safety(group_id)
+                if service is None: return self._unavailable("群内容安全设置尚未初始化")
+                group_policy = await service.get_policy(group_id)
             general_only = (
                 bool(group_policy["general_only_enabled"])
                 if group_policy is not None
@@ -368,7 +364,7 @@ class PluginWebApi:
 
     async def content_safety_group_policy(self):
         service = getattr(self.plugin, "group_safety_service", None)
-        if service is None and self.plugin.checkin_store is None:
+        if service is None:
             return self._unavailable("群内容安全设置尚未初始化")
         payload = await self._request_json_object()
         if payload is None:
@@ -381,10 +377,7 @@ class PluginWebApi:
         if not required.issubset(payload):
             return jsonify({"success": False, "error": "缺少群策略必填字段"}), 400
         try:
-            if service is not None:
-                policy = await service.upsert_policy(payload["group_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], updated_by="web")
-            else:
-                policy = await self.plugin.checkin_store.set_group_content_safety(payload["group_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], updated_by="web")
+            policy = await service.upsert_policy(payload["group_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], updated_by="web")
             return jsonify({"success": True, "group_policy": policy})
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
