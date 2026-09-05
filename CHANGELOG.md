@@ -344,5 +344,4 @@
 
 ### 📝 配置
 - 新增 `rate_limit_seconds` 配置项（请求频率限制）
-- 更新 `pixiv_ranking_mode` 提示信息
-
+- 更新 `pixiv_ranking_mode` 提示信息\n

@@ -55,5 +55,4 @@ def test_logger_warning_config(monkeypatch):
 def test_logger_warning_legacy(monkeypatch):
     monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert normalize_policy_entries([]) == ([], [])
 def test_logger_warning_reason(monkeypatch):
-    monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert normalize_policy_entries([]) == ([], [])
-
+    monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert normalize_policy_entries([]) == ([], [])\n

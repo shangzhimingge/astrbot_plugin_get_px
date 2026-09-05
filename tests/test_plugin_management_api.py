@@ -420,7 +420,4 @@ def test_management_api_unregisters_only_owned_routes() -> None:
 
     assert context.registered_web_apis == [foreign_registration]
     api.unregister()
-    assert context.registered_web_apis == [foreign_registration]
-
-
-
+    assert context.registered_web_apis == [foreign_registration]\n

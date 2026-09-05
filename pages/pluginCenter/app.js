@@ -958,8 +958,4 @@ async function start() {
   await reloadAll();
 }
 
-start();
-
-
-
-
+start();\n
