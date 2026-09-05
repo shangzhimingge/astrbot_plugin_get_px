@@ -251,7 +251,7 @@ async function reloadAll() {
 
     if (policiesResult.status === "fulfilled") {
       state.groupPolicies = policiesResult.value.group_policies || [];
-      if (!state.selectedPolicyGroupId) state.selectedPolicyGroupId = state.groupPolicies[0]?.group_id || "";
+      if (!state.selectedPolicyGroupId) selectPolicy(state.groupPolicies[0]?.group_id || "", {render:false});
       renderPolicyManager();
     } else failures.push(errorMessage(policiesResult.reason, "群策略读取失败"));
 
@@ -590,9 +590,9 @@ function renderPolicyManager() {
   if (p) { els.policyGroupId.value = p.group_id; els.policyGeneralToggle.checked = (state.policyDraft || p).general_only_enabled; els.policyBuiltinToggle.checked = (state.policyDraft || p).builtin_terms_enabled; els.policyEditorStatus.textContent = "已保存"; els.policySavedAt.textContent = p.updated_at || "尚无记录"; els.policyDeleteBtn.disabled = state.policyDeleting; } else { els.policyGroupId.value = ""; els.policyGeneralToggle.checked = true; els.policyBuiltinToggle.checked = true; els.policyEditorStatus.textContent = "请选择群"; els.policyDeleteBtn.disabled = true; }
 }
 
-function selectPolicy(groupId) { state.selectedPolicyGroupId = groupId; const p = state.groupPolicies.find(x => x.group_id === groupId); state.policySnapshot = p ? {...p} : null; state.policyDraft = p ? {...p} : null; renderPolicyManager(); }
+function selectPolicy(groupId, {render = true} = {}) { state.selectedPolicyGroupId = groupId; const p = state.groupPolicies.find(x => x.group_id === groupId); state.policySnapshot = p ? {...p} : null; state.policyDraft = p ? {...p} : null; if (render) renderPolicyManager(); }
 
-async function reloadPolicies() { const r = await apiGet("content-safety/group-policies"); state.groupPolicies = r.group_policies || []; if (!state.groupPolicies.some(p => p.group_id === state.selectedPolicyGroupId)) state.selectedPolicyGroupId = state.groupPolicies[0]?.group_id || ""; renderPolicyManager(); }
+async function reloadPolicies() { state.policyLoading=true; try { const r = await apiGet("content-safety/group-policies"); state.groupPolicies = r.group_policies || []; if (!state.groupPolicies.some(p => p.group_id === state.selectedPolicyGroupId)) selectPolicy(state.groupPolicies[0]?.group_id || "", {render:false}); renderPolicyManager(); } finally { state.policyLoading=false; } }
 
 async function reloadSafety() {
   try {
