@@ -113,9 +113,15 @@ async def test_update_replaces_existing_without_duplicate(group_policy_harness):
     assert listed["group_policies"][0]["general_only_enabled"] is False
     assert listed["group_policies"][0]["builtin_terms_enabled"] is False
     response_payload = await response.get_json()
-    assert listed["group_policies"][0]["group_id"] == response_payload["group_policy"]["group_id"]
+    assert response_payload["group_policy"]["group_id"] == "1"
+    assert listed["group_policies"][0]["group_id"] == "1"
+    assert len(group_policy_harness.plugin.config[CONFIG_KEY]) == 1
     assert group_policy_harness.plugin.config[CONFIG_KEY][0]["group_id"] == "1"
-    assert (await group_policy_harness.plugin.group_safety_service.list_policies())[0]["group_id"] == "1"
+    assert group_policy_harness.plugin.config[CONFIG_KEY][0]["general_only_enabled"] is False
+    service_policy = await group_policy_harness.plugin.group_safety_service.list_policies()
+    assert len(service_policy) == 1 and service_policy[0]["group_id"] == "1"
+    assert service_policy[0]["general_only_enabled"] is False and service_policy[0]["builtin_terms_enabled"] is False
+    assert group_policy_harness.plugin.config[MIGRATION_KEY] is True
 
 @pytest.mark.asyncio
 async def test_remove_returns_strict_default_and_is_idempotent(group_policy_harness):
@@ -144,7 +150,7 @@ async def test_upsert_rejects_invalid_payloads(group_policy_harness, payload):
     assert (await response.get_json())["success"] is False
     assert listed["group_policies"] == []
 
-@pytest.mark.parametrize("payload", [None, [], {}, {"group_id": 1}, {"group_id": " "}, {"group_id": "a" * 129}, {"group_id": "a\x00"}])
+@pytest.mark.parametrize("payload", [None, [], {}, {"group_id": None}, {"group_id": 1}, {"group_id": " "}, {"group_id": "a" * 129}, {"group_id": "a\x00"}])
 @pytest.mark.asyncio
 async def test_remove_rejects_invalid_payloads(group_policy_harness, payload):
     async with group_policy_harness.app.test_app():

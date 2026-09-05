@@ -73,6 +73,8 @@ async def test_initialize_legacy_read_failure_logs_and_keeps_strict(monkeypatch)
     assert any("legacy: read failed error_type=RuntimeError" in msg for msg in messages)
     assert config[MIGRATION_KEY] is False
     assert (await service.get_policy("200"))["is_default"] is True
+    assert (await service.get_policy("200"))["general_only_enabled"] is True
+    assert (await service.get_policy("200"))["builtin_terms_enabled"] is True
     assert await service.list_policies() == []
 
 @pytest.mark.asyncio
@@ -95,6 +97,7 @@ async def test_initialize_fail_once_rolls_back_then_retries_incremental(monkeypa
     assert config[MIGRATION_KEY] is True
     policies = await service.list_policies()
     assert [(p["group_id"], p["general_only_enabled"], p["builtin_terms_enabled"], p["is_default"]) for p in policies] == [("100", True, False, False), ("200", False, True, False)]
+    assert config[CONFIG_KEY] == [{"__template_key": "group_policy", "group_id": "100", "general_only_enabled": True, "builtin_terms_enabled": False}, {"__template_key": "group_policy", "group_id": "200", "general_only_enabled": False, "builtin_terms_enabled": True}]
 
 def test_explicit_strict_is_retained():
     entries, _ = normalize_policy_entries([{"group_id": "1", "general_only_enabled": True, "builtin_terms_enabled": True}])

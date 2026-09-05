@@ -60,16 +60,19 @@ def test_plugin_center_exposes_independent_group_safety_switches() -> None:
     assert 'content-safety/group-policy/remove' in source
     assert "删除后恢复默认严格策略" in html
     assert 'apiPost("content-safety/group-policy"' in source
-    assert "policySaving" in source or "policyDeleteBtn" in source
+    assert "policySaving" in source
+    assert "policyDeleteBtn" in source
     assert "安全策略已锁定" not in html
 
 def test_policy_state_machine_fields_and_busy_paths():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    for token in ['policyLoading','policySaving','policyDeleting','policySnapshot','policyDraft','selectPolicy(']: assert token in source
+    assert "policyLoading" in source and "policySaving" in source and "policyDeleting" in source
+    assert "policySnapshot" in source and "policyDraft" in source and "selectPolicy(" in source
 
 def test_policy_crud_paths_are_present():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    assert source.count('content-safety/group-policy') >= 2
+    assert 'apiPost("content-safety/group-policy"' in source
+    assert 'apiPost("content-safety/group-policy/remove"' in source
     assert 'content-safety/group-policy/remove' in source
 
 def test_policy_saved_time_and_focus_fallback():
@@ -96,23 +99,29 @@ def _function_body(source, name):
 
 def test_policy_named_functions_select_and_reload():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    for name in ("selectPolicy", "reloadPolicies", "addGroupPolicy", "saveGroupPolicy", "deleteGroupPolicy"):
-        assert f"function {name}" in source
+    assert "function selectPolicy" in source and "function reloadPolicies" in source
+    assert "function addGroupPolicy" in source and "function saveGroupPolicy" in source
+    assert "function deleteGroupPolicy" in source
     assert "selectPolicy(" in _function_body(source, "reloadPolicies")
     assert "selectPolicy(" in _function_body(source, "addGroupPolicy")
     assert "selectPolicy(" in _function_body(source, "saveGroupPolicy")
 
 def test_policy_busy_paths_render_after_finally():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    for name in ("addGroupPolicy", "saveGroupPolicy", "deleteGroupPolicy"):
-        body=_function_body(source,name)
-        assert "state.policy" in body and "finally" in body and "renderPolicyManager()" in body
+    add_body=_function_body(source,"addGroupPolicy")
+    save_body=_function_body(source,"saveGroupPolicy")
+    delete_body=_function_body(source,"deleteGroupPolicy")
+    assert "state.policy" in add_body and "finally" in add_body and "renderPolicyManager()" in add_body
+    assert "state.policy" in save_body and "finally" in save_body and "renderPolicyManager()" in save_body
+    assert "state.policy" in delete_body and "finally" in delete_body and "renderPolicyManager()" in delete_body
 
 def test_policy_controls_are_disabled_while_busy():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
     body=_function_body(source,"renderPolicyManager")
-    for token in ("policySearch", "policyAddBtn", "policyGeneralToggle", "policyBuiltinToggle", "policySaveBtn", "policyDeleteBtn", "policyAddInput", "policyAddCancel", "aria-busy"):
-        assert token in body
+    assert "policySearch" in body and "policyAddBtn" in body
+    assert "policyGeneralToggle" in body and "policyBuiltinToggle" in body
+    assert "policySaveBtn" in body and "policyDeleteBtn" in body
+    assert "policyAddInput" in body and "policyAddCancel" in body and "aria-busy" in body
 
 def test_policy_snapshot_restore_and_saved_time_reset():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
