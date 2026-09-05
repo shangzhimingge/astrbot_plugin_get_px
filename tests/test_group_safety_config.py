@@ -49,6 +49,20 @@ async def test_initialize_invalid_nonempty_config_skips_legacy_and_logs(monkeypa
     assert await service.list_policies() == []
     assert config[MIGRATION_KEY] is True
 
+@pytest.mark.parametrize("raw", [{"group_id": "200"}, "invalid", None])
+@pytest.mark.asyncio
+async def test_initialize_nonlist_config_is_config_first(raw, monkeypatch):
+    messages = []
+    monkeypatch.setattr("group_safety.logger.warning", messages.append)
+    config = Config({CONFIG_KEY: raw, MIGRATION_KEY: False})
+    legacy = TrackingLegacy([{"group_id": "200", "general_only_enabled": False, "builtin_terms_enabled": True}])
+    service = GroupSafetyService(config)
+    await service.initialize(legacy)
+    assert legacy.calls == 0
+    assert any("config" in msg for msg in messages)
+    assert (await service.get_policy("200"))["is_default"] is True
+    assert config[MIGRATION_KEY] is True
+
 @pytest.mark.asyncio
 async def test_initialize_legacy_read_failure_logs_and_keeps_strict(monkeypatch):
     messages = []

@@ -82,8 +82,17 @@ def test_policy_css_contract():
 
 def _function_body(source, name):
     start = source.index(f"function {name}")
-    end = source.find("\nfunction ", start + 10)
-    return source[start:] if end < 0 else source[start:end]
+    depth = 0
+    opened = False
+    for index in range(start, len(source)):
+        if source[index] == "{":
+            depth += 1
+            opened = True
+        elif source[index] == "}":
+            depth -= 1
+            if opened and depth == 0:
+                return source[start:index + 1]
+    raise AssertionError("unterminated function")
 
 def test_policy_named_functions_select_and_reload():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
@@ -108,13 +117,13 @@ def test_policy_controls_are_disabled_while_busy():
 def test_policy_snapshot_restore_and_saved_time_reset():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
     assert "state.policyDraft=snapshot" in source
-    assert "state.policySavedAt = 0" in _function_body(source,"selectPolicy")
-    assert "state.policySavedAt=Date.now()" in _function_body(source,"saveGroupPolicy")
+    assert "policySavedAt" not in source.split("const els", 1)[0]
+    assert "Date.now" not in _function_body(source,"saveGroupPolicy")
 
 def test_policy_toggle_draft_and_delete_neighbor():
     source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
     assert "policyDraft.general_only_enabled" in source and "policyDraft.builtin_terms_enabled" in source
-    assert "state.groupPolicies[0]?.group_id" in _function_body(source,"deleteGroupPolicy")
+    assert "Math.min(oldIndex" in _function_body(source,"deleteGroupPolicy")
 
 def test_policy_css_exact_interaction_selectors():
     css=(PAGE_DIR/'styles.css').read_text(encoding='utf-8')

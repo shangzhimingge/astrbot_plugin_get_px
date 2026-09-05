@@ -65,7 +65,7 @@ class GroupSafetyService:
             entries, warnings = normalize_policy_entries(raw)
             self._log_warnings("config", warnings)
             if self.config.get(MIGRATION_KEY, False): self._install(entries); return
-            if isinstance(raw, list) and raw:
+            if not isinstance(raw, list) or raw:
                 try: self._save_candidate(entries, True)
                 except Exception as exc: self._install(entries); self._log_warnings("config", [f"save failed error_type={type(exc).__name__}"])
                 return
