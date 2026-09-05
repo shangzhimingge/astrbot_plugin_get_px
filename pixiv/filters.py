@@ -46,15 +46,23 @@ class FiltersMixin:
             )
             return STRICT_CONTENT_SAFETY_POLICY
         service = getattr(self, "group_safety_service", None)
-        if not group_id or service is None:
+        if service is None:
             return STRICT_CONTENT_SAFETY_POLICY
         try:
-            value = await service.get_policy(group_id)
+            if group_id:
+                value = await service.get_group_policy(group_id)
+                identity = {"group_id": group_id}
+            else:
+                user_id = str(event.get_sender_id() or "").strip()
+                if not user_id:
+                    return STRICT_CONTENT_SAFETY_POLICY
+                value = await service.get_private_policy(user_id)
+                identity = {"user_id": user_id}
             general_only = value["general_only_enabled"]
             builtin_terms = value["builtin_terms_enabled"]
             if type(general_only) is not bool or type(builtin_terms) is not bool:
                 raise ValueError("invalid group content-safety values")
-            return ContentSafetyPolicy(general_only, builtin_terms, group_id)
+            return ContentSafetyPolicy(general_only, builtin_terms, **identity)
         except Exception as exc:
             logged_group_id = (
                 group_id.replace("\r", "\\r").replace("\n", "\\n")[:128]

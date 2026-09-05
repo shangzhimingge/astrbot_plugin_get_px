@@ -877,3 +877,7 @@ def test_calendar_data_escapes_background_credit_markup() -> None:
     assert data["background_credit"] == (
         "&lt;b&gt;画师&lt;/b&gt; &amp; &quot;夜樱&quot;"
     )
+
+def test_checkin_calendar_module_retains_default_safety_independence():
+    from pixiv.safety import STRICT_CONTENT_SAFETY_POLICY
+    assert STRICT_CONTENT_SAFETY_POLICY.general_only_enabled is True

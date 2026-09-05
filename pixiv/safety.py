@@ -12,10 +12,13 @@ class ContentSafetyPolicy:
     general_only_enabled: bool = True
     builtin_terms_enabled: bool = True
     group_id: str = ""
+    user_id: str = ""
 
     def cache_identity(self) -> dict[str, object]:
         return {
+            "scope": "group" if self.group_id else "private" if self.user_id else "default",
             "group_id": self.group_id,
+            "user_id": self.user_id,
             "general_only_enabled": self.general_only_enabled,
             "builtin_terms_enabled": self.builtin_terms_enabled,
         }

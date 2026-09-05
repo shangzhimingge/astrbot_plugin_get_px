@@ -1,6 +1,14 @@
 import pytest
 
-from group_safety import CONFIG_KEY, MIGRATION_KEY, GroupSafetyService, normalize_policy_entries
+from copy import deepcopy
+
+from group_safety import (
+    CONFIG_KEY,
+    MIGRATION_KEY,
+    PRIVATE_CONFIG_KEY,
+    GroupSafetyService,
+    normalize_policy_entries,
+)
 
 class Config(dict):
     def save_config(self):
@@ -100,8 +108,101 @@ async def test_initialize_fail_once_rolls_back_then_retries_incremental(monkeypa
     assert config[MIGRATION_KEY] is True
     policies = await service.list_policies()
     assert [(p["group_id"], p["general_only_enabled"], p["builtin_terms_enabled"], p["is_default"]) for p in policies] == [("100", True, False, False), ("200", False, True, False)]
-    assert config[CONFIG_KEY] == [{"__template_key": "group_policy", "group_id": "100", "general_only_enabled": True, "builtin_terms_enabled": False}, {"__template_key": "group_policy", "group_id": "200", "general_only_enabled": False, "builtin_terms_enabled": True}]
+    assert config[CONFIG_KEY] == [
+        {"__template_key": "group_policy", "group_id": "100", "general_only_enabled": True, "builtin_terms_enabled": False, "updated_by": "", "updated_at": ""},
+        {"__template_key": "group_policy", "group_id": "200", "general_only_enabled": False, "builtin_terms_enabled": True, "updated_by": "", "updated_at": ""},
+    ]
 
 def test_explicit_strict_is_retained():
     entries, _ = normalize_policy_entries([{"group_id": "1", "general_only_enabled": True, "builtin_terms_enabled": True}])
     assert entries[0]["general_only_enabled"] is True
+
+@pytest.mark.asyncio
+async def test_private_policy_namespace_isolated_from_group():
+    config = Config({CONFIG_KEY: [], MIGRATION_KEY: False, PRIVATE_CONFIG_KEY: []})
+    service = GroupSafetyService(config)
+    await service.upsert_private_policy(
+        "u1", general_only_enabled=False, builtin_terms_enabled=True
+    )
+    assert (await service.get_private_policy("u1"))["general_only_enabled"] is False
+    assert (await service.get_policy("u1"))["is_default"] is True
+    assert config[MIGRATION_KEY] is False
+    assert config[CONFIG_KEY] == []
+
+
+@pytest.mark.asyncio
+async def test_private_initialize_survives_group_legacy_read_failure():
+    config = Config(
+        {
+            CONFIG_KEY: [],
+            MIGRATION_KEY: False,
+            PRIVATE_CONFIG_KEY: [
+                {
+                    "__template_key": "private_policy",
+                    "user_id": "u1",
+                    "general_only_enabled": False,
+                    "builtin_terms_enabled": True,
+                    "updated_at": "2026-09-06T00:00:00+00:00",
+                    "updated_by": "web",
+                }
+            ],
+        }
+    )
+    service = GroupSafetyService(config)
+    await service.initialize(TrackingLegacy(error=RuntimeError("broken")))
+    policy = await service.get_private_policy("u1")
+    assert policy["is_default"] is False
+    assert policy["general_only_enabled"] is False
+    assert policy["updated_by"] == "web"
+
+
+@pytest.mark.asyncio
+async def test_scope_writes_do_not_touch_other_scope_or_migration_marker():
+    config = Config(
+        {
+            CONFIG_KEY: [{"__template_key": "group_policy", "group_id": "g1", "general_only_enabled": True, "builtin_terms_enabled": False}],
+            MIGRATION_KEY: False,
+            PRIVATE_CONFIG_KEY: [{"__template_key": "private_policy", "user_id": "u1", "general_only_enabled": False, "builtin_terms_enabled": True}],
+        }
+    )
+    service = GroupSafetyService(config)
+    service._install(config[CONFIG_KEY])
+    service._install(config[PRIVATE_CONFIG_KEY], private=True)
+    group_before = deepcopy(config[CONFIG_KEY])
+    private_list = config[PRIVATE_CONFIG_KEY]
+    await service.upsert_private_policy("u2", general_only_enabled=False, builtin_terms_enabled=False)
+    assert config[CONFIG_KEY] == group_before
+    assert config[MIGRATION_KEY] is False
+    assert config[PRIVATE_CONFIG_KEY] is private_list
+    private_before = deepcopy(config[PRIVATE_CONFIG_KEY])
+    await service.upsert_group_policy("g2", general_only_enabled=False, builtin_terms_enabled=True)
+    assert config[PRIVATE_CONFIG_KEY] == private_before
+
+
+@pytest.mark.asyncio
+async def test_failed_scope_write_rolls_back_config_and_runtime():
+    config = Config({CONFIG_KEY: [], MIGRATION_KEY: True, PRIVATE_CONFIG_KEY: []})
+    service = GroupSafetyService(config)
+    await service.upsert_private_policy("u1", general_only_enabled=False, builtin_terms_enabled=True)
+    before_config = deepcopy(dict(config))
+    before_private = await service.list_private_policies()
+    config["fail"] = True
+    with pytest.raises(RuntimeError, match="save failed"):
+        await service.upsert_group_policy("g1", general_only_enabled=False, builtin_terms_enabled=False)
+    assert {key: value for key, value in config.items() if key != "fail"} == before_config
+    assert await service.list_private_policies() == before_private
+    assert await service.list_group_policies() == []
+
+
+@pytest.mark.asyncio
+async def test_group_and_private_metadata_survive_reinitialize():
+    config = Config({CONFIG_KEY: [], MIGRATION_KEY: True, PRIVATE_CONFIG_KEY: []})
+    service = GroupSafetyService(config)
+    await service.upsert_group_policy("g1", general_only_enabled=False, builtin_terms_enabled=True, updated_by="web")
+    await service.upsert_private_policy("u1", general_only_enabled=True, builtin_terms_enabled=False, updated_by="web")
+    reloaded = GroupSafetyService(config)
+    await reloaded.initialize(TrackingLegacy())
+    group = await reloaded.get_group_policy("g1")
+    private = await reloaded.get_private_policy("u1")
+    assert group["updated_by"] == private["updated_by"] == "web"
+    assert group["updated_at"] and private["updated_at"]

@@ -55,7 +55,7 @@ plugin_api/
 
 ## 前端页面
 
-`pages/pluginCenter/` 使用原生 HTML、CSS 和 ES module，集中提供群排行、成员当前数值编辑、内容安全和签到数据管理。前端不持久化业务数据；SQLite 和签到备份仍是后端唯一数据源。成员编辑只更新 `checkin_users`，不回写 `checkin_records` 或 `checkin_group_presence`。
+`pages/pluginCenter/` 使用原生 HTML、CSS 和 ES module，集中提供群排行、成员当前数值编辑、内容安全、会话策略和签到数据管理。会话策略由配置文件持久化；签到业务数据仍由 SQLite 和签到备份管理。成员编辑只更新 `checkin_users`，不回写 `checkin_records` 或 `checkin_group_presence`。
 
 ## 依赖方向
 
@@ -76,8 +76,10 @@ python -m compileall -q main.py checkin pixiv plugin_api scripts/ci tests
 node --check pages/pluginCenter/app.js
 python -m pytest -q
 ```
-# 群内容安全策略
+# 会话内容安全策略
 
-`checkin.sqlite3` 的 schema v3 新增 `group_content_safety` 稀疏表。`CheckinStore` 负责原子读写，缺行表示“仅普通分级”和“内置安全词”均开启；v1/v2 升级前会在 `checkin_migration_backups/` 创建 SQLite 一致性备份。签到 JSON 快照不包含该运行时配置。
+`SessionSafetyService` 分别维护 `group_content_safety_policies` 与 `private_content_safety_policies` 两个配置命名空间。旧 `group_content_safety` SQLite 表只作为群策略的一次性迁移来源；私聊写入不会修改群配置或迁移标记，任一作用域保存失败只回滚该作用域。
 
-每次搜索、签到背景选择、日历背景或已保存在线背景恢复时，入口只解析一次不可变 `ContentSafetyPolicy`，随后传给 Lolicon 取源、Pixiv 回退、本地候选过滤和最终复核。私聊、缺失存储和读库异常均使用严格策略。管理页黑名单缩略图没有群上下文，因此始终采用严格策略。
+每次搜索、签到背景选择、日历背景或已保存在线背景恢复时，入口只解析一次不可变 `ContentSafetyPolicy`，随后传给 Lolicon 取源、Pixiv 回退、本地候选过滤和最终复核。群消息只查询群 ID，私聊只查询发送者用户 ID；缺失记录、无效 ID 或读取异常均使用严格策略，且不跨作用域回退。管理页黑名单缩略图没有会话上下文，因此始终采用严格策略。
+
+会话策略服务隔离群聊与私聊命名空间，缓存身份同时包含会话类型和标识。

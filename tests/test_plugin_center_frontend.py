@@ -55,33 +55,15 @@ def test_plugin_center_uses_relative_bridge_endpoints() -> None:
 def test_plugin_center_exposes_independent_group_safety_switches() -> None:
     html = (PAGE_DIR / "index.html").read_text(encoding="utf-8")
     source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
-    assert 'safetyGroupInput' not in html
-    assert 'content-safety/group-policies' in source
-    assert 'content-safety/group-policy/remove' in source
-    assert "删除后恢复默认严格策略" in html
-    assert 'apiPost("content-safety/group-policy"' in source
-    assert "policySaving" in source
-    assert "policyDeleteBtn" in source
-    assert "安全策略已锁定" not in html
-
-def test_policy_state_machine_fields_and_busy_paths():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    assert "policyLoading" in source and "policySaving" in source and "policyDeleting" in source
-    assert "policySnapshot" in source and "policyDraft" in source and "selectPolicy(" in source
-
-def test_policy_crud_paths_are_present():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    assert 'apiPost("content-safety/group-policy"' in source
-    assert 'apiPost("content-safety/group-policy/remove"' in source
-    assert 'content-safety/group-policy/remove' in source
-
-def test_policy_saved_time_and_focus_fallback():
-    html=(PAGE_DIR/'index.html').read_text(encoding='utf-8'); source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    assert 'id="policySavedAt"' in html and 'requestAnimationFrame' in source and 'policyAddBtn.focus' in source
-
-def test_policy_css_contract():
-    css=(PAGE_DIR/'styles.css').read_text(encoding='utf-8')
-    assert css.count('{')==css.count('}') and ':focus-visible' in css and ':disabled' in css and 'max-width: 900px' in css and 'max-width: 620px' in css
+    assert 'data-view="policies" type="button">会话策略</button>' in html
+    assert 'id="policyGroupScopeBtn"' in html and 'aria-pressed="true"' in html
+    assert 'id="policyPrivateScopeBtn"' in html and 'aria-pressed="false"' in html
+    assert 'id="policyCount"' in html
+    assert 'id="policyEditorEmpty"' in html
+    assert 'id="policyIdLabel"' in html
+    assert 'class="policy-toggle-card"' in html
+    assert 'id="policyAddTitle"' in html and 'id="policyAddLabel"' in html
+    assert 'import * as policyState from "./policy-state.mjs"' in source
 
 def _function_body(source, name):
     start = source.index(f"function {name}")
@@ -97,73 +79,70 @@ def _function_body(source, name):
                 return source[start:index + 1]
     raise AssertionError("unterminated function")
 
-def test_policy_named_functions_select_and_reload():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    assert "function selectPolicy" in source and "function reloadPolicies" in source
-    assert "function addGroupPolicy" in source and "function saveGroupPolicy" in source
-    assert "function deleteGroupPolicy" in source
-    assert "selectPolicy(" in _function_body(source, "reloadPolicies")
-    assert "selectPolicy(" in _function_body(source, "addGroupPolicy")
-    assert "selectPolicy(" in _function_body(source, "saveGroupPolicy")
+def test_policy_state_module_drives_real_selection_and_crud_paths():
+    source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
+    reload_body = _function_body(source, "reloadPolicies")
+    select_body = _function_body(source, "requestPolicySelection")
+    add_body = _function_body(source, "addPolicy")
+    save_body = _function_body(source, "savePolicy")
+    delete_body = _function_body(source, "deletePolicy")
+    assert "policyState.replacePolicyRecords(" in reload_body
+    assert "policyState.selectPolicyRecord(" in select_body
+    assert "policyState.upsertPolicyRecord(" in add_body
+    assert "policyState.upsertPolicyRecord(" in save_body
+    assert "policyState.discardPolicyDraft(bucket)" in save_body
+    assert "policyState.removePolicyRecord(" in delete_body
+    assert all("finally" in body for body in (reload_body, add_body, save_body, delete_body))
 
-def test_policy_busy_paths_render_after_finally():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    add_body=_function_body(source,"addGroupPolicy")
-    save_body=_function_body(source,"saveGroupPolicy")
-    delete_body=_function_body(source,"deleteGroupPolicy")
-    assert "state.policy" in add_body and "finally" in add_body and "renderPolicyManager()" in add_body
-    assert "state.policy" in save_body and "finally" in save_body and "renderPolicyManager()" in save_body
-    assert "state.policy" in delete_body and "finally" in delete_body and "renderPolicyManager()" in delete_body
 
-def test_policy_controls_are_disabled_while_busy():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    body=_function_body(source,"renderPolicyManager")
-    assert "policySearch" in body and "policyAddBtn" in body
-    assert "policyGeneralToggle" in body and "policyBuiltinToggle" in body
-    assert "policySaveBtn" in body and "policyDeleteBtn" in body
-    assert "policyAddInput" in body and "policyAddCancel" in body and "aria-busy" in body
+def test_policy_switches_use_reachable_dirty_confirmation():
+    source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
+    scope_body = _function_body(source, "requestPolicyScopeChange")
+    selection_body = _function_body(source, "requestPolicySelection")
+    confirm_body = _function_body(source, "confirmPolicyDraftDiscard")
+    assert "await confirmPolicyDraftDiscard(" in scope_body
+    assert "await confirmPolicyDraftDiscard(" in selection_body
+    assert "policyState.hasUnsavedPolicyDraft(" in confirm_body
+    assert "policyState.discardPolicyDraft(" in confirm_body
 
-def test_policy_snapshot_restore_and_saved_time_reset():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    assert "state.policyDraft=snapshot" in source
-    assert "policySavedAt" not in source.split("const els", 1)[0]
-    assert "Date.now" not in _function_body(source,"saveGroupPolicy")
 
-def test_policy_toggle_draft_and_delete_neighbor():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    assert "policyDraft.general_only_enabled" in source and "policyDraft.builtin_terms_enabled" in source
-    assert "Math.min(oldIndex" in _function_body(source,"deleteGroupPolicy")
+def test_policy_render_updates_dynamic_copy_aria_and_busy_controls():
+    source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
+    body = _function_body(source, "renderPolicyManager")
+    for token in (
+        'setAttribute("aria-pressed"',
+        "policyCount.textContent",
+        "policyIdLabel.textContent",
+        "policyAddTitle.textContent",
+        "policyAddLabel.textContent",
+        "policyEditorEmpty.hidden",
+        "policyAddSubmit",
+        'setAttribute("aria-busy"',
+    ):
+        assert token in body
 
-def test_policy_css_exact_interaction_selectors():
-    css=(PAGE_DIR/'styles.css').read_text(encoding='utf-8')
-    assert ".policy-list-item:focus-visible" in css
-    assert ".policy-list-item:disabled" in css
-    assert '#policyEditorForm[aria-busy="true"]' in css
 
-def test_policy_reload_functions_have_precise_loading_and_selection_flow():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    reload_all=_function_body(source,"reloadAll")
-    reload_policies=_function_body(source,"reloadPolicies")
-    assert "state.policyLoading = true" in reload_all
-    assert "state.policyLoading = false" in reload_all
-    assert "renderPolicyManager()" in reload_all
-    assert "selectPolicy(" in reload_all
-    assert "if (state.policyLoading) return" in reload_policies
-    assert "state.policyLoading=true" in reload_policies
-    assert "state.policyLoading=false" in reload_policies
-    assert "renderPolicyManager()" in reload_policies
-    assert "selectPolicy(" in reload_policies
+def test_policy_frontend_has_no_legacy_mirror_or_contract_comments():
+    source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
+    for token in (
+        "syncLegacyPolicyState",
+        "Legacy endpoint contracts",
+        "state.groupPolicies",
+        "state.privatePolicies",
+        "state.policyQuery",
+        "state.policyDraft",
+        "state.policySnapshot",
+    ):
+        assert token not in source
 
-def test_policy_add_submit_and_busy_controls_are_precise():
-    source=(PAGE_DIR/'app.js').read_text(encoding='utf-8')
-    render=_function_body(source,"renderPolicyManager")
-    add=_function_body(source,"addGroupPolicy")
-    assert 'policyAddSubmit: $("policyAddSubmit")' in source
-    assert 'els.policyAddSubmit' in render and 'state.policySaving' in render
-    assert 'policyAddForm?.setAttribute("aria-busy", String(state.policySaving))' in render
-    assert "if (state.policySaving) return" in add
-    assert "if (!groupId || state.policySaving) return" in source
-    assert "els.policyGeneralToggle.disabled = busy || !p" in render
-    assert "els.policyBuiltinToggle.disabled = busy || !p" in render
-    assert "els.policySaveBtn.disabled = busy || !p" in render
-    assert "els.policyDeleteBtn.disabled = busy || !p" in render
+
+def test_policy_css_uses_sakura_tokens_and_responsive_actions():
+    css = (PAGE_DIR / "styles.css").read_text(encoding="utf-8")
+    assert css.count("{") == css.count("}")
+    assert '.policy-scope-switch button[aria-pressed="true"]' in css
+    assert ".policy-toggle-card" in css and ".policy-badge" in css
+    assert "@media (max-width: 900px)" in css
+    mobile = css[css.rindex("@media (max-width: 620px)"):]
+    assert "#policySaveBtn" in mobile and "#policyDeleteBtn" in mobile
+    for undefined in ("--surface-muted", "--radius-pill", "--text-secondary", "--shadow-sm", "--radius-md"):
+        assert undefined not in css

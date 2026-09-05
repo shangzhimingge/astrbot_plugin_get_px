@@ -1,3 +1,4 @@
+import * as policyState from "./policy-state.mjs";
 const bridge = window.AstrBotPluginPage;
 
 const state = {
@@ -7,8 +8,7 @@ const state = {
   rankingType: "today",
   trendDays: 7,
   safety: { builtin_terms: [], custom_terms: [] },
-  groupPolicies: [], selectedPolicyGroupId: "", policyQuery: "", policySnapshot: null, policyDraft: null,
-  policyLoading: false, policySaving: false, policyDeleting: false,
+  policyScope: "group",
   blacklist: [],
   thumbs: {},
   members: [],
@@ -91,6 +91,10 @@ const els = {
   policyAddDialog: $("policyAddDialog"), policyAddForm: $("policyAddForm"), policyAddInput: $("policyAddInput"),
   policyAddCancel: $("policyAddCancel"), policyEditorForm: $("policyEditorForm"), policyGroupId: $("policyGroupId"),
   policyGeneralToggle: $("policyGeneralToggle"), policyBuiltinToggle: $("policyBuiltinToggle"), policySaveBtn: $("policySaveBtn"), policyDeleteBtn: $("policyDeleteBtn"), policyAddSubmit: $("policyAddSubmit"), policyError: $("policyError"), policyEditorStatus: $("policyEditorStatus"), policySavedAt: $("policySavedAt"),
+  policyGroupScopeBtn: $("policyGroupScopeBtn"), policyPrivateScopeBtn: $("policyPrivateScopeBtn"),
+  policyCount: $("policyCount"), policyEditorEmpty: $("policyEditorEmpty"),
+  policyIdLabel: $("policyIdLabel"), policyAddTitle: $("policyAddTitle"),
+  policyAddLabel: $("policyAddLabel"), policyScopeHint: $("policyScopeHint"),
 };
 
 function escapeHtml(value) {
@@ -169,7 +173,7 @@ async function loadFont() {
     link.rel = "stylesheet";
     link.href = config.font_url;
     document.head.append(link);
-  } catch { /* fallback to system font */ }
+  } catch {  }
 }
 
 // Batch load thumbnails for blacklist
@@ -195,21 +199,18 @@ async function loadBlacklistThumbnails() {
 async function reloadAll() {
   if (state.loading) return;
   state.loading = true;
-  state.policyLoading = true;
-  renderPolicyManager();
   const refreshButton = $("refreshBtn");
   setButtonBusy(refreshButton, true, "正在刷新…", "刷新数据");
   hideGlobalError();
   const failures = [];
   let shouldLoadRanking = false;
   try {
-    const [overviewResult, groupsResult, safetyResult, blacklistResult, policiesResult] =
+    const [overviewResult, groupsResult, safetyResult, blacklistResult] =
       await Promise.allSettled([
         apiGet("overview"),
         apiGet("checkin-groups"),
         apiGet("content-safety"),
         apiGet("image-blacklist"),
-        apiGet("content-safety/group-policies"),
       ]);
 
     if (overviewResult.status === "fulfilled") {
@@ -251,11 +252,16 @@ async function reloadAll() {
       if (!state.loaded.safety) renderSafetyError();
     }
 
-    if (policiesResult.status === "fulfilled") {
-      state.groupPolicies = policiesResult.value.group_policies || [];
-      selectPolicy(state.groupPolicies.some(p => p.group_id === state.selectedPolicyGroupId) ? state.selectedPolicyGroupId : (state.groupPolicies[0]?.group_id || ""), {render:false});
-      renderPolicyManager();
-    } else failures.push(errorMessage(policiesResult.reason, "群策略读取失败"));
+    const policyResults = await Promise.allSettled([
+      reloadPolicies("group"),
+      reloadPolicies("private"),
+    ]);
+    if (policyResults[0].status === "rejected") {
+      failures.push(errorMessage(policyResults[0].reason, "群策略读取失败"));
+    }
+    if (policyResults[1].status === "rejected") {
+      failures.push(errorMessage(policyResults[1].reason, "私聊策略读取失败"));
+    }
 
     if (blacklistResult.status === "fulfilled") {
       state.blacklist = Array.isArray(blacklistResult.value.records)
@@ -285,8 +291,6 @@ async function reloadAll() {
     }
   } finally {
     state.loading = false;
-    state.policyLoading = false;
-    renderPolicyManager();
     setButtonBusy(refreshButton, false, "正在刷新…", "刷新数据");
   }
 }
@@ -584,32 +588,225 @@ function renderSafetyError() {
   els.customTerms.innerHTML = '<div class="empty error">自定义安全词暂时无法读取。</div>';
 }
 
-function renderPolicyManager() {
-  if (!els.policyList) return;
-  const q = (state.policyQuery || "").toLowerCase();
-  const rows = state.groupPolicies.filter(p => String(p.group_id).toLowerCase().includes(q));
-  const busy = state.policyLoading || state.policySaving || state.policyDeleting;
-  els.policyList.innerHTML = rows.map(p => `<button type="button" class="policy-list-item ${p.group_id === state.selectedPolicyGroupId ? "active" : ""}" data-policy-group="${escapeHtml(p.group_id)}"${busy ? " disabled" : ""}><strong>${escapeHtml(p.group_id)}</strong><small>${p.general_only_enabled ? "仅普通" : "混合分级"} · ${p.builtin_terms_enabled ? "内置词开" : "内置词关"}</small></button>`).join("") || '<div class="empty">暂无群策略</div>';
-  els.policyList.querySelectorAll("[data-policy-group]").forEach(b => b.addEventListener("click", () => selectPolicy(b.dataset.policyGroup)));
-  const p = state.groupPolicies.find(x => x.group_id === state.selectedPolicyGroupId);
-  if (els.policySearch) els.policySearch.disabled = busy;
-  if (els.policyAddBtn) els.policyAddBtn.disabled = busy;
-  if (els.policyGeneralToggle) els.policyGeneralToggle.disabled = busy || !p;
-  if (els.policyBuiltinToggle) els.policyBuiltinToggle.disabled = busy || !p;
-  if (els.policySaveBtn) els.policySaveBtn.disabled = busy || !p;
-  if (els.policyDeleteBtn) els.policyDeleteBtn.disabled = busy || !p;
-  [els.policyAddInput, els.policyAddCancel, els.policyAddSubmit].forEach((control) => { if (control) control.disabled = state.policySaving; });
-  els.policyEditorForm?.setAttribute("aria-busy", String(busy));
-  els.policyAddForm?.setAttribute("aria-busy", String(state.policySaving));
-  if (p) { els.policyGroupId.value = p.group_id; els.policyGeneralToggle.checked = (state.policyDraft || p).general_only_enabled; els.policyBuiltinToggle.checked = (state.policyDraft || p).builtin_terms_enabled; els.policyEditorStatus.textContent = busy ? "正在处理…" : "已保存"; els.policySavedAt.textContent = p.updated_at ? formatDate(p.updated_at) : "尚无记录"; } else { els.policyGroupId.value = ""; els.policyGeneralToggle.checked = true; els.policyBuiltinToggle.checked = true; els.policyEditorStatus.textContent = "请选择群"; els.policyDeleteBtn.disabled = true; els.policySavedAt.textContent = "尚无记录"; }
+const policyByScope = {
+  group: policyState.createPolicyBucket("group"),
+  private: policyState.createPolicyBucket("private"),
+};
+
+function activePolicyDefinition(scope = state.policyScope) {
+  return policyState.POLICY_SCOPES[scope] || policyState.POLICY_SCOPES.group;
 }
 
-function selectPolicy(groupId, {render = true} = {}) { state.selectedPolicyGroupId = groupId; const p = state.groupPolicies.find(x => x.group_id === groupId); state.policySnapshot = p ? {...p} : null; state.policyDraft = p ? {...p} : null; if (render) renderPolicyManager(); }
+function activePolicyBucket(scope = state.policyScope) {
+  return policyByScope[scope];
+}
 
-async function reloadPolicies() { if (state.policyLoading) return; state.policyLoading=true; renderPolicyManager(); try { const r = await apiGet("content-safety/group-policies"); state.groupPolicies = r.group_policies || []; selectPolicy(state.groupPolicies.some(p => p.group_id === state.selectedPolicyGroupId) ? state.selectedPolicyGroupId : (state.groupPolicies[0]?.group_id || ""), {render:false}); } finally { state.policyLoading=false; renderPolicyManager(); } }
-async function addGroupPolicy(groupId) { if (state.policySaving) return; state.policySaving=true; renderPolicyManager(); try { const result = await apiPost("content-safety/group-policy", {group_id: groupId, general_only_enabled: true, builtin_terms_enabled: true}); state.groupPolicies.push(result.group_policy); state.groupPolicies.sort((a,b)=>a.group_id.localeCompare(b.group_id)); selectPolicy(groupId, {render:false}); } finally { state.policySaving=false; renderPolicyManager(); } }
-async function saveGroupPolicy() { const groupId = els.policyGroupId.value; const snapshot = state.policySnapshot ? {...state.policySnapshot} : null; state.policySaving=true; state.policyDraft={...snapshot,general_only_enabled:els.policyGeneralToggle.checked,builtin_terms_enabled:els.policyBuiltinToggle.checked}; renderPolicyManager(); try { const result=await apiPost("content-safety/group-policy", {group_id:groupId,general_only_enabled:state.policyDraft.general_only_enabled,builtin_terms_enabled:state.policyDraft.builtin_terms_enabled}); const i=state.groupPolicies.findIndex(p=>p.group_id===groupId); if(i>=0) state.groupPolicies[i]=result.group_policy; selectPolicy(groupId, {render:false}); } catch(e) { state.policyDraft=snapshot; throw e; } finally { state.policySaving=false; renderPolicyManager(); } }
-async function deleteGroupPolicy() { const groupId=els.policyGroupId.value; if(!groupId || state.policyDeleting || !await confirmAction("删除群策略","删除后恢复默认严格策略，确认继续吗？")) return; const snapshot=state.groupPolicies.map(p=>({...p})); const oldIndex=state.groupPolicies.findIndex(p=>p.group_id===groupId); state.policyDeleting=true; renderPolicyManager(); try { await apiPost("content-safety/group-policy/remove", {group_id:groupId}); state.groupPolicies=state.groupPolicies.filter(p=>p.group_id!==groupId); const next=Math.min(oldIndex,state.groupPolicies.length-1); selectPolicy(state.groupPolicies[next]?.group_id || "", {render:false}); } catch(e) { state.groupPolicies=snapshot; throw e; } finally { state.policyDeleting=false; renderPolicyManager(); if (!state.groupPolicies.length) requestAnimationFrame(() => els.policyAddBtn.focus()); } }
+function setPolicyBucket(scope, bucket) {
+  policyByScope[scope] = bucket;
+  return bucket;
+}
+
+function renderPolicyManager() {
+  if (!els.policyList) return;
+  const scope = state.policyScope;
+  const bucket = activePolicyBucket();
+  const definition = activePolicyDefinition();
+  const busy = bucket.loading || bucket.saving || bucket.deleting;
+  const query = bucket.search.trim().toLocaleLowerCase("zh-CN");
+  const rows = bucket.records.filter((record) =>
+    policyState.policyRecordId(scope, record).toLocaleLowerCase("zh-CN").includes(query),
+  );
+
+  els.policyGroupScopeBtn.setAttribute("aria-pressed", String(scope === "group"));
+  els.policyPrivateScopeBtn.setAttribute("aria-pressed", String(scope === "private"));
+  els.policyGroupScopeBtn.disabled = busy;
+  els.policyPrivateScopeBtn.disabled = busy;
+  els.policyCount.textContent = String(bucket.records.length);
+  els.policyScopeHint.textContent = `按${definition.idLabel}独立保存；删除后恢复严格策略。`;
+  els.policyIdLabel.textContent = definition.idLabel;
+  els.policyAddTitle.textContent = `添加${definition.objectLabel}策略`;
+  els.policyAddLabel.textContent = definition.idLabel;
+  els.policyAddInput.placeholder = `请输入${definition.idLabel}`;
+  if (document.activeElement !== els.policySearch) els.policySearch.value = bucket.search;
+
+  els.policyList.innerHTML = rows.map((record) => {
+    const id = policyState.policyRecordId(scope, record);
+    const active = id === bucket.selectedId;
+    return `<button type="button" class="policy-list-item${active ? " active" : ""}"
+      data-policy-id="${escapeHtml(id)}" aria-pressed="${String(active)}"${busy ? " disabled" : ""}>
+      <strong>${escapeHtml(id)}</strong>
+      <small><span class="policy-badge">${record.general_only_enabled ? "仅普通" : "允许敏感"}</span>
+      <span class="policy-badge">${record.builtin_terms_enabled ? "内置词开启" : "内置词关闭"}</span></small>
+    </button>`;
+  }).join("") || `<div class="empty policy-empty">
+    ${bucket.loading ? "正在读取策略…" : `暂无${definition.objectLabel}策略。`}
+    ${bucket.loading ? "" : `<button type="button" class="empty-action" data-policy-empty-add>添加${definition.objectLabel}策略</button>`}
+  </div>`;
+
+  els.policyList.querySelectorAll("[data-policy-id]").forEach((button) =>
+    button.addEventListener("click", () => requestPolicySelection(button.dataset.policyId)));
+  els.policyList.querySelector("[data-policy-empty-add]")?.addEventListener(
+    "click", () => els.policyAddBtn.click(),
+  );
+
+  const draft = bucket.draft;
+  els.policyEditorEmpty.hidden = Boolean(draft);
+  els.policyEditorForm.hidden = !draft;
+  els.policyGroupId.value = draft ? policyState.policyRecordId(scope, draft) : "";
+  els.policyGeneralToggle.checked = draft?.general_only_enabled === true;
+  els.policyBuiltinToggle.checked = draft?.builtin_terms_enabled === true;
+  els.policySavedAt.textContent = draft?.updated_at ? `保存于 ${formatDate(draft.updated_at)}` : "尚无保存记录";
+  els.policyEditorStatus.textContent = bucket.error
+    ? "操作失败"
+    : busy ? "正在处理…" : draft ? (policyState.hasUnsavedPolicyDraft(bucket) ? "有未保存修改" : "已保存") : "未选择";
+  els.policyError.textContent = bucket.error;
+
+  [els.policySearch, els.policyAddBtn].forEach((control) => { control.disabled = busy; });
+  [els.policyGeneralToggle, els.policyBuiltinToggle, els.policySaveBtn, els.policyDeleteBtn]
+    .forEach((control) => { control.disabled = busy || !draft; });
+  [els.policyAddInput, els.policyAddCancel, els.policyAddSubmit]
+    .forEach((control) => { control.disabled = bucket.saving; });
+  els.policyEditorForm.setAttribute("aria-busy", String(busy));
+  els.policyAddForm.setAttribute("aria-busy", String(bucket.saving));
+}
+
+async function confirmPolicyDraftDiscard(message) {
+  const bucket = activePolicyBucket();
+  if (!policyState.hasUnsavedPolicyDraft(bucket)) return true;
+  if (!await confirmAction("放弃未保存修改", message)) return false;
+  setPolicyBucket(state.policyScope, policyState.discardPolicyDraft(bucket));
+  return true;
+}
+
+async function requestPolicyScopeChange(scope) {
+  if (scope === state.policyScope || !policyByScope[scope]) return;
+  if (!await confirmPolicyDraftDiscard("切换会话类型将放弃当前草稿，确认继续吗？")) return;
+  state.policyScope = scope;
+  renderPolicyManager();
+  if (!activePolicyBucket().loaded) await reloadPolicies(scope);
+}
+
+async function requestPolicySelection(id) {
+  if (!await confirmPolicyDraftDiscard("切换会话将放弃当前草稿，确认继续吗？")) return;
+  setPolicyBucket(
+    state.policyScope,
+    policyState.selectPolicyRecord(activePolicyBucket(), state.policyScope, id),
+  );
+  renderPolicyManager();
+}
+
+async function reloadPolicies(scope = state.policyScope) {
+  const bucket = activePolicyBucket(scope);
+  if (bucket.loading) return;
+  const definition = activePolicyDefinition(scope);
+  const preferredId = bucket.selectedId;
+  setPolicyBucket(scope, { ...bucket, loading: true, error: "" });
+  if (scope === state.policyScope) renderPolicyManager();
+  try {
+    const result = await apiGet(definition.listEndpoint);
+    setPolicyBucket(
+      scope,
+      policyState.replacePolicyRecords(
+        activePolicyBucket(scope), scope, result[definition.listKey] || [], preferredId,
+      ),
+    );
+  } catch (error) {
+    setPolicyBucket(scope, { ...activePolicyBucket(scope), error: error.message || "读取失败" });
+    throw error;
+  } finally {
+    setPolicyBucket(scope, { ...activePolicyBucket(scope), loading: false });
+    if (scope === state.policyScope) renderPolicyManager();
+  }
+}
+
+async function addPolicy(id) {
+  const scope = state.policyScope;
+  const definition = activePolicyDefinition();
+  const bucket = activePolicyBucket();
+  if (bucket.saving) return;
+  setPolicyBucket(scope, { ...bucket, saving: true, error: "" });
+  renderPolicyManager();
+  try {
+    const result = await apiPost(definition.saveEndpoint, {
+      [definition.idKey]: id,
+      general_only_enabled: true,
+      builtin_terms_enabled: true,
+    });
+    setPolicyBucket(
+      scope,
+      policyState.upsertPolicyRecord(activePolicyBucket(), scope, result[definition.recordKey]),
+    );
+  } catch (error) {
+    setPolicyBucket(scope, {
+      ...policyState.discardPolicyDraft(bucket),
+      error: error.message || "保存失败",
+    });
+    throw error;
+  } finally {
+    setPolicyBucket(scope, { ...activePolicyBucket(scope), saving: false });
+    renderPolicyManager();
+  }
+}
+
+async function savePolicy() {
+  const scope = state.policyScope;
+  const definition = activePolicyDefinition();
+  const bucket = activePolicyBucket();
+  if (!bucket.draft || bucket.saving) return;
+  const draft = {
+    ...bucket.draft,
+    general_only_enabled: els.policyGeneralToggle.checked,
+    builtin_terms_enabled: els.policyBuiltinToggle.checked,
+  };
+  setPolicyBucket(scope, { ...bucket, draft, saving: true, error: "" });
+  renderPolicyManager();
+  try {
+    const result = await apiPost(definition.saveEndpoint, {
+      [definition.idKey]: policyState.policyRecordId(scope, draft),
+      general_only_enabled: draft.general_only_enabled,
+      builtin_terms_enabled: draft.builtin_terms_enabled,
+    });
+    setPolicyBucket(
+      scope,
+      policyState.upsertPolicyRecord(activePolicyBucket(), scope, result[definition.recordKey]),
+    );
+  } catch (error) {
+    setPolicyBucket(scope, {
+      ...policyState.discardPolicyDraft(bucket),
+      error: error.message || "保存失败",
+    });
+    throw error;
+  } finally {
+    setPolicyBucket(scope, { ...activePolicyBucket(scope), saving: false });
+    renderPolicyManager();
+  }
+}
+
+async function deletePolicy() {
+  const scope = state.policyScope;
+  const definition = activePolicyDefinition();
+  const bucket = activePolicyBucket();
+  const id = bucket.selectedId;
+  if (!id || bucket.deleting) return false;
+  if (!await confirmAction("删除策略", `删除该${definition.objectLabel}策略后将恢复默认严格设置，确认继续吗？`)) return false;
+  setPolicyBucket(scope, { ...bucket, deleting: true, error: "" });
+  renderPolicyManager();
+  try {
+    await apiPost(definition.removeEndpoint, { [definition.idKey]: id });
+    setPolicyBucket(
+      scope,
+      policyState.removePolicyRecord(activePolicyBucket(), scope, id),
+    );
+    return true;
+  } catch (error) {
+    setPolicyBucket(scope, { ...bucket, error: error.message || "删除失败" });
+    throw error;
+  } finally {
+    setPolicyBucket(scope, { ...activePolicyBucket(scope), deleting: false });
+    renderPolicyManager();
+    if (!activePolicyBucket().records.length) requestAnimationFrame(() => els.policyAddBtn.focus());
+  }
+}
 
 async function reloadSafety() {
   try {
@@ -755,7 +952,9 @@ function switchView(name) {
   if (name === "data" && !state.loaded.cache) {
     loadCacheStorage();
   }
-  if (name === "policies" && els.policyList && !state.groupPolicies.length) reloadPolicies().catch(e => showToast(e.message, "error"));
+  if (name === "policies" && els.policyList && !activePolicyBucket().loaded) {
+    reloadPolicies().catch((error) => showToast(error.message, "error"));
+  }
 }
 
 function confirmAction(title, message) {
@@ -855,14 +1054,77 @@ function bindEvents() {
     }
   });
 
-  els.policySearch?.addEventListener("input", () => { state.policyQuery = els.policySearch.value; renderPolicyManager(); });
-  els.policyGeneralToggle?.addEventListener("change", () => { if (state.policyDraft) state.policyDraft.general_only_enabled = els.policyGeneralToggle.checked; });
-  els.policyBuiltinToggle?.addEventListener("change", () => { if (state.policyDraft) state.policyDraft.builtin_terms_enabled = els.policyBuiltinToggle.checked; });
-  els.policyAddBtn?.addEventListener("click", () => { els.policyAddInput.value = ""; els.policyAddDialog.showModal(); els.policyAddInput.focus(); });
+  els.policyGroupScopeBtn?.addEventListener("click", () => requestPolicyScopeChange("group"));
+  els.policyPrivateScopeBtn?.addEventListener("click", () => requestPolicyScopeChange("private"));
+  els.policySearch?.addEventListener("input", () => {
+    const scope = state.policyScope;
+    setPolicyBucket(scope, { ...activePolicyBucket(), search: els.policySearch.value });
+    renderPolicyManager();
+  });
+  els.policyGeneralToggle?.addEventListener("change", () => {
+    const bucket = activePolicyBucket();
+    if (!bucket.draft) return;
+    setPolicyBucket(state.policyScope, {
+      ...bucket,
+      draft: { ...bucket.draft, general_only_enabled: els.policyGeneralToggle.checked },
+    });
+    renderPolicyManager();
+  });
+  els.policyBuiltinToggle?.addEventListener("change", () => {
+    const bucket = activePolicyBucket();
+    if (!bucket.draft) return;
+    setPolicyBucket(state.policyScope, {
+      ...bucket,
+      draft: { ...bucket.draft, builtin_terms_enabled: els.policyBuiltinToggle.checked },
+    });
+    renderPolicyManager();
+  });
+  els.policyAddBtn?.addEventListener("click", () => {
+    els.policyAddInput.value = "";
+    els.policyAddError.textContent = "";
+    renderPolicyManager();
+    els.policyAddDialog.showModal();
+    els.policyAddInput.focus();
+  });
   els.policyAddCancel?.addEventListener("click", () => els.policyAddDialog.close());
-  els.policyAddForm?.addEventListener("submit", async (event) => { event.preventDefault(); const groupId = els.policyAddInput.value.trim(); if (!groupId || state.policySaving) return; if (state.groupPolicies.some(p => p.group_id === groupId)) { selectPolicy(groupId); els.policyAddError.textContent = "该群已存在"; return; } try { await addGroupPolicy(groupId); els.policyAddDialog.close(); showToast("群策略已添加"); } catch (e) { els.policyAddError.textContent = e.message; } });
-  els.policyEditorForm?.addEventListener("submit", async (event) => { event.preventDefault(); if (state.policySaving) return; try { await saveGroupPolicy(); showToast("群策略已保存"); } catch(e) { els.policyError.textContent=e.message; } });
-  els.policyDeleteBtn?.addEventListener("click", async () => { try { await deleteGroupPolicy(); showToast("群策略已删除"); } catch(e) { els.policyError.textContent=e.message; } });
+  els.policyAddForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const id = els.policyAddInput.value.trim();
+    const definition = activePolicyDefinition();
+    const bucket = activePolicyBucket();
+    if (!id || bucket.saving) return;
+    if (bucket.records.some((record) => policyState.policyRecordId(state.policyScope, record) === id)) {
+      els.policyAddDialog.close();
+      await requestPolicySelection(id);
+      showToast(`该${definition.objectLabel}策略已存在`);
+      return;
+    }
+    try {
+      await addPolicy(id);
+      els.policyAddDialog.close();
+      showToast(`${definition.objectLabel}策略已添加`);
+    } catch (error) {
+      els.policyAddError.textContent = error.message || "添加失败";
+    }
+  });
+  els.policyEditorForm?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const definition = activePolicyDefinition();
+    try {
+      await savePolicy();
+      showToast(`${definition.objectLabel}策略已保存`);
+    } catch (error) {
+      els.policyError.textContent = error.message || "保存失败";
+    }
+  });
+  els.policyDeleteBtn?.addEventListener("click", async () => {
+    const definition = activePolicyDefinition();
+    try {
+      if (await deletePolicy()) showToast(`${definition.objectLabel}策略已删除`);
+    } catch (error) {
+      els.policyError.textContent = error.message || "删除失败";
+    }
+  });
   $("termForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = $("termInput");

@@ -53,6 +53,9 @@ class GroupPolicyHarness:
         self.app.add_url_rule("/content-safety/group-policy", view_func=self.api.content_safety_group_policy, methods=["POST"])
         self.app.add_url_rule("/content-safety/group-policies", view_func=self.api.content_safety_group_policies, methods=["GET"])
         self.app.add_url_rule("/content-safety/group-policy/remove", view_func=self.api.content_safety_group_policy_remove, methods=["POST"])
+        self.app.add_url_rule("/content-safety/private-policy", view_func=self.api.content_safety_private_policy, methods=["POST"])
+        self.app.add_url_rule("/content-safety/private-policies", view_func=self.api.content_safety_private_policies, methods=["GET"])
+        self.app.add_url_rule("/content-safety/private-policy/remove", view_func=self.api.content_safety_private_policy_remove, methods=["POST"])
 
 
 @pytest.fixture
@@ -99,7 +102,8 @@ async def test_group_policy_list_is_fully_sorted_and_retains_explicit_strict(gro
     assert response.status_code == 200
     assert [p["group_id"] for p in payload["group_policies"]] == ["1", "2"]
     assert all(p["is_default"] is False for p in payload["group_policies"])
-    assert group_policy_harness.plugin.config[CONFIG_KEY] == [{"__template_key": "group_policy", "group_id": "1", "general_only_enabled": True, "builtin_terms_enabled": True}, {"__template_key": "group_policy", "group_id": "2", "general_only_enabled": True, "builtin_terms_enabled": True}]
+    assert [item["group_id"] for item in group_policy_harness.plugin.config[CONFIG_KEY]] == ["1", "2"]
+    assert all(item["updated_by"] == "web" and item["updated_at"] for item in group_policy_harness.plugin.config[CONFIG_KEY])
 
 @pytest.mark.asyncio
 async def test_update_replaces_existing_without_duplicate(group_policy_harness):
@@ -557,3 +561,78 @@ def test_management_api_unregisters_only_owned_routes() -> None:
     assert context.registered_web_apis == [foreign_registration]
     api.unregister()
     assert context.registered_web_apis == [foreign_registration]
+
+@pytest.mark.asyncio
+async def test_private_policy_query_response_uses_private_field(group_policy_harness):
+    async with group_policy_harness.app.test_app():
+        client=group_policy_harness.app.test_client()
+        response=await client.post("/content-safety/private-policy",json={"user_id":"u-test","general_only_enabled":False,"builtin_terms_enabled":True})
+        assert response.status_code==200
+        response=await client.get("/content-safety",query_string={"user_id":"u-test"})
+        payload=await response.get_json()
+    assert response.status_code==200 and payload["private_policy"]["user_id"]=="u-test"
+
+
+@pytest.mark.asyncio
+async def test_private_policy_crud_is_persistent_and_idempotent(group_policy_harness):
+    async with group_policy_harness.app.test_app():
+        client = group_policy_harness.app.test_client()
+        created = await client.post(
+            "/content-safety/private-policy",
+            json={"user_id": " u1 ", "general_only_enabled": False, "builtin_terms_enabled": True},
+        )
+        updated = await client.post(
+            "/content-safety/private-policy",
+            json={"user_id": "u1", "general_only_enabled": True, "builtin_terms_enabled": False},
+        )
+        listed = await (await client.get("/content-safety/private-policies")).get_json()
+        removed = await (await client.post("/content-safety/private-policy/remove", json={"user_id": "u1"})).get_json()
+        removed_again = await (await client.post("/content-safety/private-policy/remove", json={"user_id": "u1"})).get_json()
+
+    assert created.status_code == updated.status_code == 200
+    assert len(listed["private_policies"]) == 1
+    assert listed["private_policies"][0]["builtin_terms_enabled"] is False
+    assert removed["removed"] is True
+    assert removed["private_policy"]["is_default"] is True
+    assert removed_again["removed"] is False
+
+
+@pytest.mark.asyncio
+async def test_private_policy_validation_conflict_and_unavailable(group_policy_harness):
+    async with group_policy_harness.app.test_app():
+        client = group_policy_harness.app.test_client()
+        invalid_bodies = [
+            {},
+            {"user_id": "", "general_only_enabled": True, "builtin_terms_enabled": True},
+            {"user_id": "u1", "general_only_enabled": 1, "builtin_terms_enabled": True},
+            {"user_id": "u\n1", "general_only_enabled": True, "builtin_terms_enabled": True},
+        ]
+        responses = [await client.post("/content-safety/private-policy", json=body) for body in invalid_bodies]
+        conflict = await client.get("/content-safety?group_id=&user_id=")
+        group_policy_harness.plugin.group_safety_service = None
+        unavailable = await client.get("/content-safety/private-policies")
+
+    assert all(response.status_code == 400 for response in responses)
+    assert conflict.status_code == 400
+    assert unavailable.status_code == 503
+
+
+@pytest.mark.asyncio
+async def test_private_policy_save_failure_rolls_back(group_policy_harness):
+    async with group_policy_harness.app.test_app():
+        client = group_policy_harness.app.test_client()
+        await client.post(
+            "/content-safety/private-policy",
+            json={"user_id": "u1", "general_only_enabled": False, "builtin_terms_enabled": True},
+        )
+        before_config = [dict(item) for item in group_policy_harness.plugin.config["private_content_safety_policies"]]
+        before_runtime = await group_policy_harness.plugin.group_safety_service.list_private_policies()
+        group_policy_harness.plugin.config.fail_next = True
+        failed = await client.post(
+            "/content-safety/private-policy",
+            json={"user_id": "u1", "general_only_enabled": True, "builtin_terms_enabled": False},
+        )
+
+    assert failed.status_code == 500
+    assert group_policy_harness.plugin.config["private_content_safety_policies"] == before_config
+    assert await group_policy_harness.plugin.group_safety_service.list_private_policies() == before_runtime

@@ -1,3 +1,4 @@
+import asyncio
 import sys
 import unittest
 import tempfile
@@ -169,3 +170,75 @@ class SafetyFilteringTest(unittest.IsolatedAsyncioTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+def test_content_safety_cache_identity_separates_private_and_group():
+    from pixiv.safety import ContentSafetyPolicy
+    assert ContentSafetyPolicy(user_id="1").cache_identity() != ContentSafetyPolicy(group_id="1").cache_identity()
+    assert ContentSafetyPolicy(user_id="1").cache_identity() != ContentSafetyPolicy(user_id="2").cache_identity()
+
+
+class PolicyEvent:
+    def __init__(self, group_id="", sender_id=""):
+        self.group_id = group_id
+        self.sender_id = sender_id
+
+    def get_group_id(self):
+        return self.group_id
+
+    def get_sender_id(self):
+        return self.sender_id
+
+
+class RecordingPolicyService:
+    def __init__(self, *, fail_group=False, fail_private=False):
+        self.calls = []
+        self.fail_group = fail_group
+        self.fail_private = fail_private
+
+    async def get_group_policy(self, group_id):
+        self.calls.append(("group", group_id))
+        if self.fail_group:
+            raise RuntimeError("group failed")
+        return {"general_only_enabled": False, "builtin_terms_enabled": True}
+
+    async def get_private_policy(self, user_id):
+        self.calls.append(("private", user_id))
+        if self.fail_private:
+            raise RuntimeError("private failed")
+        return {"general_only_enabled": True, "builtin_terms_enabled": False}
+
+
+async def _resolved_policy(event, service):
+    mixin = object.__new__(FiltersMixin)
+    mixin.group_safety_service = service
+    return await mixin._content_safety_policy(event)
+
+
+def test_runtime_policy_resolution_uses_exactly_one_scope():
+    async def run():
+        service = RecordingPolicyService()
+        group_policy = await _resolved_policy(PolicyEvent("g1", "u1"), service)
+        assert service.calls == [("group", "g1")]
+        assert group_policy.group_id == "g1" and group_policy.user_id == ""
+
+        service.calls.clear()
+        private_policy = await _resolved_policy(PolicyEvent("", "u1"), service)
+        assert service.calls == [("private", "u1")]
+        assert private_policy.user_id == "u1" and private_policy.group_id == ""
+
+    asyncio.run(run())
+
+
+def test_runtime_policy_failures_are_strict_without_cross_scope_fallback():
+    async def run():
+        service = RecordingPolicyService(fail_group=True)
+        policy = await _resolved_policy(PolicyEvent("g1", "u1"), service)
+        assert policy == ContentSafetyPolicy()
+        assert service.calls == [("group", "g1")]
+
+        service = RecordingPolicyService(fail_private=True)
+        policy = await _resolved_policy(PolicyEvent("", "u1"), service)
+        assert policy == ContentSafetyPolicy()
+        assert service.calls == [("private", "u1")]
+
+    asyncio.run(run())
