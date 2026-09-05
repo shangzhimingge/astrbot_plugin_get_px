@@ -3,21 +3,10 @@ from __future__ import annotations
 import asyncio
 from contextlib import closing
 
-
-MAX_GROUP_ID_LENGTH = 128
-
-
-def normalize_group_id(value: object) -> str:
-    if not isinstance(value, str):
-        raise ValueError("group_id must be a string")
-    group_id = value.strip()
-    if not group_id:
-        raise ValueError("group_id is required")
-    if len(group_id) > MAX_GROUP_ID_LENGTH:
-        raise ValueError(f"group_id must not exceed {MAX_GROUP_ID_LENGTH} characters")
-    if any(ord(char) < 32 for char in group_id):
-        raise ValueError("group_id contains invalid control characters")
-    return group_id
+try:
+    from ..group_safety import normalize_group_id
+except ImportError:
+    from group_safety import normalize_group_id
 
 
 def require_bool(value: object, field: str) -> bool:
@@ -27,6 +16,15 @@ def require_bool(value: object, field: str) -> bool:
 
 
 class GroupSafetyStoreMixin:
+    async def list_group_content_safety_records(self) -> list[dict[str, object]]:
+        async with self._lock:
+            return await asyncio.to_thread(self._list_group_content_safety_records_sync)
+
+    def _list_group_content_safety_records_sync(self) -> list[dict[str, object]]:
+        with closing(self._connect()) as conn:
+            rows = conn.execute("SELECT group_id, general_only_enabled, builtin_terms_enabled, updated_by, updated_at FROM group_content_safety ORDER BY group_id").fetchall()
+        return [{"group_id": str(row["group_id"]), "general_only_enabled": bool(row["general_only_enabled"]), "builtin_terms_enabled": bool(row["builtin_terms_enabled"]), "updated_by": str(row["updated_by"] or ""), "updated_at": str(row["updated_at"] or "")} for row in rows]
+
     async def get_group_content_safety(self, group_id: str) -> dict[str, object]:
         normalized = normalize_group_id(group_id)
         async with self._lock:

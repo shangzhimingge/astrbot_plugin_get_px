@@ -45,11 +45,11 @@ class FiltersMixin:
                 f"error_type={type(exc).__name__}"
             )
             return STRICT_CONTENT_SAFETY_POLICY
-        store = getattr(self, "checkin_store", None)
-        if not group_id or store is None:
+        service = getattr(self, "group_safety_service", None)
+        if not group_id or service is None:
             return STRICT_CONTENT_SAFETY_POLICY
         try:
-            value = await store.get_group_content_safety(group_id)
+            value = await service.get_policy(group_id)
             general_only = value["general_only_enabled"]
             builtin_terms = value["builtin_terms_enabled"]
             if type(general_only) is not bool or type(builtin_terms) is not bool:

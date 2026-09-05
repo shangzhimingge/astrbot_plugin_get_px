@@ -22,6 +22,7 @@ try:
         normalize_safety_text,
         normalized_builtin_terms,
     )
+    from ..group_safety import normalize_group_id
     from .web_api_compat import unregister_web_apis
 except ImportError:  # Direct imports used by the test suite.
     from checkin import load_checkin_snapshot_json
@@ -33,6 +34,7 @@ except ImportError:  # Direct imports used by the test suite.
         normalize_safety_text,
         normalized_builtin_terms,
     )
+    from group_safety import normalize_group_id
     from plugin_api.web_api_compat import unregister_web_apis
 
 
@@ -91,6 +93,8 @@ class PluginWebApi:
                 ["POST"],
                 "Update a group content safety policy",
             ),
+            ("content-safety/group-policies", self.content_safety_group_policies, ["GET"], "List group content safety policies"),
+            ("content-safety/group-policy/remove", self.content_safety_group_policy_remove, ["POST"], "Remove a group content safety policy"),
             (
                 "content-safety/terms/add",
                 self.content_safety_term_add,
@@ -323,9 +327,11 @@ class PluginWebApi:
             group_id = str(request.args.get("group_id", "") or "").strip()
             group_policy = None
             if group_id:
-                group_policy = await self.plugin.checkin_store.get_group_content_safety(
-                    group_id
-                )
+                service = getattr(self.plugin, "group_safety_service", None)
+                if service is not None:
+                    group_policy = await service.get_policy(group_id)
+                else:
+                    group_policy = await self.plugin.checkin_store.get_group_content_safety(group_id)
             general_only = (
                 bool(group_policy["general_only_enabled"])
                 if group_policy is not None
@@ -361,7 +367,8 @@ class PluginWebApi:
             return self.internal_error("读取内容安全策略", exc)
 
     async def content_safety_group_policy(self):
-        if self.plugin.checkin_store is None:
+        service = getattr(self.plugin, "group_safety_service", None)
+        if service is None and self.plugin.checkin_store is None:
             return self._unavailable("群内容安全设置尚未初始化")
         payload = await self._request_json_object()
         if payload is None:
@@ -374,17 +381,32 @@ class PluginWebApi:
         if not required.issubset(payload):
             return jsonify({"success": False, "error": "缺少群策略必填字段"}), 400
         try:
-            policy = await self.plugin.checkin_store.set_group_content_safety(
-                payload["group_id"],
-                general_only_enabled=payload["general_only_enabled"],
-                builtin_terms_enabled=payload["builtin_terms_enabled"],
-                updated_by="web",
-            )
+            if service is not None:
+                policy = await service.upsert_policy(payload["group_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], updated_by="web")
+            else:
+                policy = await self.plugin.checkin_store.set_group_content_safety(payload["group_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], updated_by="web")
             return jsonify({"success": True, "group_policy": policy})
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc:
             return self.internal_error("更新群内容安全策略", exc)
+
+    async def content_safety_group_policies(self):
+        service = getattr(self.plugin, "group_safety_service", None)
+        if service is None: return self._unavailable("群内容安全设置尚未初始化")
+        try: return jsonify({"success": True, "group_policies": await service.list_policies()})
+        except Exception as exc: return self.internal_error("读取群内容安全策略", exc)
+
+    async def content_safety_group_policy_remove(self):
+        service = getattr(self.plugin, "group_safety_service", None)
+        if service is None: return self._unavailable("群内容安全设置尚未初始化")
+        payload = await self._request_json_object()
+        if payload is None: return jsonify({"success": False, "error": "请求内容必须是对象"}), 400
+        try:
+            removed, policy = await service.remove_policy(payload.get("group_id"))
+            return jsonify({"success": True, "removed": removed, "group_policy": policy})
+        except ValueError as exc: return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc: return self.internal_error("删除群内容安全策略", exc)
 
     async def content_safety_term_add(self):
         if self.plugin.image_index is None:

@@ -43,6 +43,7 @@ from astrbot.api.star import Context, Star
 from astrbot.core.star.filter.command import GreedyStr
 from astrbot.core.star.star_tools import StarTools
 from .checkin import CheckinStore, UnversionedCheckinDatabaseError
+from .group_safety import GroupSafetyService
 from .checkin.application import CheckinApplicationMixin
 from .checkin.artwork import CheckinArtworkMixin
 from .checkin.cache import CheckinCardCache
@@ -106,6 +107,7 @@ class GetPxPlugin(
     def __init__(self, context: Context, config: AstrBotConfig):
         super().__init__(context, config)
         self.config = config
+        self.group_safety_service = GroupSafetyService(config, log_prefix=LOG_PREFIX)
         self.client: PixivClient | None = None
         self.lolicon_client: LoliconClient | None = None
         self.downloader = ImageDownloader(
@@ -163,6 +165,7 @@ class GetPxPlugin(
             f"{LOG_PREFIX} 签到数据库{database_action}: "
             f"version={PLUGIN_VERSION}, path={self.checkin_store._db_path}"
         )
+        await self.group_safety_service.initialize(self.checkin_store)
         self.checkin_cache = CheckinCardCache(self.data_dir / "checkin_card_cache")
         await asyncio.to_thread(self.checkin_cache.cleanup_expired, force=True)
         self.holiday_calendar = HolidayCalendar(

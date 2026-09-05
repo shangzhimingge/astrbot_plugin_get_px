@@ -278,6 +278,30 @@
     },
     "hint": "同一用户两次请求的最小间隔，设为 0 禁用。防止刷屏。"
   },
+  "group_content_safety_policies": {
+    "type": "template_list",
+    "description": "群策略配置",
+    "hint": "按群独立管理普通分级和内置安全词；删除条目后恢复默认严格策略。",
+    "default": [],
+    "templates": {
+      "group_policy": {
+        "name": "群策略",
+        "display_item": "group_id",
+        "hide_hint_in_list": true,
+        "items": {
+          "group_id": {"description": "群 ID", "type": "string", "default": ""},
+          "general_only_enabled": {"description": "强制普通分级", "type": "bool", "default": true},
+          "builtin_terms_enabled": {"description": "启用内置安全词", "type": "bool", "default": true}
+        }
+      }
+    }
+  },
+  "group_content_safety_policies_migrated": {
+    "type": "bool",
+    "description": "群策略迁移标记",
+    "default": false,
+    "invisible": true
+  },
   "webui_font_source": {
     "description": "WebUI 字体来源",
     "type": "string",
