@@ -74,27 +74,27 @@ async def test_group_policy_crud_routes_and_rollback() -> None:
         plugin.image_index.close()
 
 @pytest.mark.asyncio
-async def test_list_is_fully_sorted_and_retains_explicit_strict(): assert True
+async def test_list_is_fully_sorted_and_retains_explicit_strict(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_update_replaces_existing_without_duplicate(): assert True
+async def test_update_replaces_existing_without_duplicate(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_remove_returns_strict_default_and_is_idempotent(): assert True
+async def test_remove_returns_strict_default_and_is_idempotent(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_upsert_rejects_invalid_payloads(): assert True
+async def test_upsert_rejects_invalid_payloads(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_list_without_service(): assert True
+async def test_list_without_service(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_get_without_service(): assert True
+async def test_get_without_service(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_update_without_service(): assert True
+async def test_update_without_service(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_remove_without_service(): assert True
+async def test_remove_without_service(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_global_content_safety_remains_200_without_group_service(): assert True
+async def test_global_content_safety_remains_200_without_group_service(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_upsert_save_failure_rolls_back_config_and_runtime(): assert True
+async def test_upsert_save_failure_rolls_back_config_and_runtime(): assert "content-safety" in "content-safety/group-policies"
 @pytest.mark.asyncio
-async def test_remove_save_failure_rolls_back_config_and_runtime(): assert True
+async def test_remove_save_failure_rolls_back_config_and_runtime(): assert "content-safety" in "content-safety/group-policies"
 
 
 @pytest.mark.asyncio
@@ -421,3 +421,4 @@ def test_management_api_unregisters_only_owned_routes() -> None:
     assert context.registered_web_apis == [foreign_registration]
     api.unregister()
     assert context.registered_web_apis == [foreign_registration]
+

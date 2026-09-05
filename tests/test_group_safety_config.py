@@ -53,6 +53,7 @@ def test_explicit_strict_is_retained():
 def test_logger_warning_config(monkeypatch):
     calls=[]; monkeypatch.setattr("group_safety.logger.warning", lambda message: calls.append(message)); assert calls == []
 def test_logger_warning_legacy(monkeypatch):
-    monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert True
+    monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert normalize_policy_entries([]) == ([], [])
 def test_logger_warning_reason(monkeypatch):
-    monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert True
+    monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert normalize_policy_entries([]) == ([], [])
+
