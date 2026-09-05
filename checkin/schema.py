@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from contextlib import closing
+from datetime import datetime, timezone
+from pathlib import Path
 import sqlite3
 
 from .themes import CHECKIN_THEMES
 
 
-CHECKIN_DB_SCHEMA_VERSION = 2
+CHECKIN_DB_SCHEMA_VERSION = 3
 
 
 class UnversionedCheckinDatabaseError(RuntimeError):
@@ -23,7 +25,7 @@ class SchemaMixin:
     def _init_db(self) -> None:
         with closing(self._connect()) as conn:
             schema_version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-            if schema_version not in (0, 1, CHECKIN_DB_SCHEMA_VERSION):
+            if schema_version not in (0, 1, 2, CHECKIN_DB_SCHEMA_VERSION):
                 raise RuntimeError(
                     f"unsupported check-in database schema: {schema_version}"
                 )
@@ -34,11 +36,13 @@ class SchemaMixin:
                 raise UnversionedCheckinDatabaseError(
                     "unversioned non-empty check-in database is unsupported"
                 )
+            if schema_version in (1, 2):
+                self._backup_before_migration(conn, schema_version)
             # WAL 切换不能在事务内执行，需先于 BEGIN IMMEDIATE。
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("BEGIN IMMEDIATE")
             try:
-                if schema_version in (1, CHECKIN_DB_SCHEMA_VERSION):
+                if schema_version in (1, 2, CHECKIN_DB_SCHEMA_VERSION):
                     self._ensure_v2_record_columns(conn)
                 self._create_checkin_schema(conn)
                 self._sync_builtin_themes(conn)
@@ -47,6 +51,18 @@ class SchemaMixin:
             except Exception:
                 conn.rollback()
                 raise
+
+    def _backup_before_migration(
+        self, source: sqlite3.Connection, schema_version: int
+    ) -> Path:
+        """Create a consistent SQLite backup before applying a schema upgrade."""
+        backup_dir = self._db_path.parent / "checkin_migration_backups"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ")
+        backup_path = backup_dir / f"checkin-v{schema_version}-{stamp}.sqlite3"
+        with closing(sqlite3.connect(backup_path)) as target:
+            source.backup(target)
+        return backup_path
 
     @staticmethod
     def _ensure_v2_record_columns(conn: sqlite3.Connection) -> None:
@@ -200,6 +216,19 @@ class SchemaMixin:
                 last_seen_at TEXT NOT NULL,
                 PRIMARY KEY (date_key, group_id, user_id),
                 FOREIGN KEY (user_id) REFERENCES checkin_users(user_id) ON DELETE CASCADE
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS group_content_safety (
+                group_id TEXT PRIMARY KEY,
+                general_only_enabled INTEGER NOT NULL DEFAULT 1
+                    CHECK (general_only_enabled IN (0, 1)),
+                builtin_terms_enabled INTEGER NOT NULL DEFAULT 1
+                    CHECK (builtin_terms_enabled IN (0, 1)),
+                updated_by TEXT NOT NULL DEFAULT '',
+                updated_at TEXT NOT NULL
             )
             """
         )

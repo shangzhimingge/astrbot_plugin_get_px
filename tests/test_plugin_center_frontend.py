@@ -45,3 +45,16 @@ def test_plugin_center_uses_relative_bridge_endpoints() -> None:
     assert all(not endpoint.startswith("/") for endpoint in endpoints)
     assert "image-history" not in source
     assert "cache_cleanup" not in source
+
+
+def test_plugin_center_exposes_independent_group_safety_switches() -> None:
+    html = (PAGE_DIR / "index.html").read_text(encoding="utf-8")
+    source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
+    assert 'id="safetyGroupInput"' in html
+    assert 'id="generalOnlyToggle"' in html
+    assert 'id="builtinTermsToggle"' in html
+    assert "私聊固定两项开启" in html
+    assert "自定义安全词与作品 ID 黑名单始终全局生效" in html
+    assert 'apiPost("content-safety/group-policy"' in source
+    assert "groupPolicyRequestId" in source
+    assert "安全策略已锁定" not in html

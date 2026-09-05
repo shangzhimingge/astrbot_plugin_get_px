@@ -7,6 +7,11 @@ const state = {
   rankingType: "today",
   trendDays: 7,
   safety: { builtin_terms: [], custom_terms: [] },
+  selectedSafetyGroup: "",
+  groupPolicy: null,
+  groupPolicyLoading: false,
+  groupPolicySaving: false,
+  groupPolicyRequestId: 0,
   blacklist: [],
   thumbs: {},
   members: [],
@@ -64,6 +69,14 @@ const els = {
   builtinTerms: $("builtinTerms"),
   builtinCount: $("builtinCount"),
   builtinSearch: $("builtinSearch"),
+  safetyGroupInput: $("safetyGroupInput"),
+  safetyGroupOptions: $("safetyGroupOptions"),
+  generalOnlyToggle: $("generalOnlyToggle"),
+  builtinTermsToggle: $("builtinTermsToggle"),
+  groupPolicyStatus: $("groupPolicyStatus"),
+  groupPolicySave: $("groupPolicySave"),
+  groupPolicyError: $("groupPolicyError"),
+  safetyStatusSummary: $("safetyStatusSummary"),
   customTerms: $("customTerms"),
   customCount: $("customCount"),
   blacklistContent: $("blacklistContent"),
@@ -239,6 +252,21 @@ async function reloadAll() {
     } else {
       failures.push(errorMessage(safetyResult.reason, "内容安全数据读取失败"));
       if (!state.loaded.safety) renderSafetyError();
+    }
+
+    if (state.loaded.safety) {
+      if (!state.selectedSafetyGroup) {
+        state.selectedSafetyGroup = state.groups[0]?.group_id || "";
+      }
+      els.safetyGroupInput.value = state.selectedSafetyGroup;
+      renderSafetyPolicy();
+      if (state.selectedSafetyGroup) {
+        try {
+          await loadGroupSafetyPolicy(state.selectedSafetyGroup);
+        } catch (error) {
+          failures.push(errorMessage(error, "群内容安全策略读取失败"));
+        }
+      }
     }
 
     if (blacklistResult.status === "fulfilled") {
@@ -526,6 +554,68 @@ function readMemberForm() {
   return values;
 }
 
+function renderSafetyPolicy() {
+  const policy = state.groupPolicy || {
+    general_only_enabled: true,
+    builtin_terms_enabled: true,
+    is_default: true,
+  };
+  const hasGroup = Boolean(state.selectedSafetyGroup);
+  els.safetyGroupOptions.innerHTML = state.groups.map((group) => (
+    `<option value="${escapeHtml(group.group_id)}">${escapeHtml(group.group_name || group.group_id)}</option>`
+  )).join("");
+  els.generalOnlyToggle.checked = Boolean(policy.general_only_enabled);
+  els.builtinTermsToggle.checked = Boolean(policy.builtin_terms_enabled);
+  const busy = state.groupPolicyLoading || state.groupPolicySaving;
+  els.safetyGroupInput.disabled = state.groupPolicySaving;
+  els.generalOnlyToggle.disabled = !hasGroup || busy;
+  els.builtinTermsToggle.disabled = !hasGroup || busy;
+  els.groupPolicySave.disabled = !hasGroup || busy;
+  els.groupPolicySave.setAttribute("aria-busy", String(state.groupPolicySaving));
+  els.groupPolicySave.textContent = state.groupPolicySaving ? "正在保存…" : "保存群策略";
+  els.groupPolicyStatus.textContent = !hasGroup
+    ? "请选择群"
+    : state.groupPolicyLoading
+      ? "正在读取…"
+      : policy.is_default
+        ? "使用默认严格策略"
+        : `已单独配置 · ${formatDate(policy.updated_at)}`;
+  els.safetyStatusSummary.textContent = !hasGroup
+    ? "私聊固定使用严格策略"
+    : `${state.selectedSafetyGroup}：${policy.general_only_enabled ? "仅普通分级" : "普通/R18 混合"}，${policy.builtin_terms_enabled ? "内置词开启" : "内置词关闭"}`;
+}
+
+async function loadGroupSafetyPolicy(groupId) {
+  const normalized = String(groupId || "").trim();
+  state.selectedSafetyGroup = normalized;
+  state.groupPolicy = null;
+  state.groupPolicyRequestId += 1;
+  const requestId = state.groupPolicyRequestId;
+  els.groupPolicyError.textContent = "";
+  if (!normalized) {
+    renderSafetyPolicy();
+    return;
+  }
+  state.groupPolicyLoading = true;
+  renderSafetyPolicy();
+  try {
+    const result = await apiGet("content-safety", { group_id: normalized });
+    if (requestId !== state.groupPolicyRequestId || normalized !== state.selectedSafetyGroup) return;
+    state.safety = result;
+    state.groupPolicy = result.group_policy || null;
+    renderSafety();
+  } catch (error) {
+    if (requestId !== state.groupPolicyRequestId || normalized !== state.selectedSafetyGroup) return;
+    els.groupPolicyError.textContent = error.message || "群策略读取失败";
+    throw error;
+  } finally {
+    if (requestId === state.groupPolicyRequestId) {
+      state.groupPolicyLoading = false;
+      renderSafetyPolicy();
+    }
+  }
+}
+
 function renderSafety() {
   const query = els.builtinSearch.value.trim().toLocaleLowerCase("zh-CN");
   const builtin = (state.safety.builtin_terms || []).filter((term) =>
@@ -557,6 +647,7 @@ function renderSafety() {
       }
     });
   });
+  renderSafetyPolicy();
 }
 
 function renderSafetyError() {
@@ -568,7 +659,11 @@ function renderSafetyError() {
 
 async function reloadSafety() {
   try {
-    state.safety = await apiGet("content-safety");
+    const params = state.selectedSafetyGroup
+      ? { group_id: state.selectedSafetyGroup }
+      : {};
+    state.safety = await apiGet("content-safety", params);
+    state.groupPolicy = state.safety.group_policy || null;
     state.loaded.safety = true;
     state.overview.custom_term_count = state.safety.custom_terms?.length || 0;
     renderSafety();
@@ -806,6 +901,53 @@ function bindEvents() {
       showToast(els.memberFormError.textContent, "error");
     } finally {
       setButtonBusy(submitButton, false, "正在保存…", "保存修改");
+    }
+  });
+
+  els.safetyGroupInput.addEventListener("change", async () => {
+    const groupId = els.safetyGroupInput.value.trim();
+    try {
+      await loadGroupSafetyPolicy(groupId);
+    } catch (error) {
+      showToast(error.message || "群策略读取失败", "error");
+      els.safetyGroupInput.focus();
+    }
+  });
+
+  $("groupPolicyForm").addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const groupId = els.safetyGroupInput.value.trim();
+    if (!groupId || state.groupPolicySaving) return;
+    const generalOnlyEnabled = els.generalOnlyToggle.checked;
+    const builtinTermsEnabled = els.builtinTermsToggle.checked;
+    state.selectedSafetyGroup = groupId;
+    state.groupPolicySaving = true;
+    state.groupPolicy = {
+      ...(state.groupPolicy || {}),
+      group_id: groupId,
+      general_only_enabled: generalOnlyEnabled,
+      builtin_terms_enabled: builtinTermsEnabled,
+    };
+    els.groupPolicyError.textContent = "";
+    renderSafetyPolicy();
+    try {
+      const result = await apiPost("content-safety/group-policy", {
+        group_id: groupId,
+        general_only_enabled: generalOnlyEnabled,
+        builtin_terms_enabled: builtinTermsEnabled,
+      });
+      state.groupPolicy = result.group_policy;
+      showToast("群内容安全策略已保存");
+    } catch (error) {
+      els.groupPolicyError.textContent = error.message || "保存失败，已恢复服务器设置。";
+      showToast(els.groupPolicyError.textContent, "error");
+      try {
+        await loadGroupSafetyPolicy(groupId);
+      } catch { /* keep the last successfully rendered server value */ }
+      els.groupPolicySave.focus();
+    } finally {
+      state.groupPolicySaving = false;
+      renderSafetyPolicy();
     }
   });
 

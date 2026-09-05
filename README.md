@@ -59,10 +59,12 @@
 | --- | --- |
 | 搜图发图 | Lolicon 标签搜索或随机取图，失败时回退 Pixiv 搜索/推荐，支持数量限制与原图自动降级 |
 | 图片来源 | Lolicon 为首选；`pixiv_refresh_token` 可选，仅作回退 |
-| 内容安全 | 强制普通分级、内置安全词（不可关）、自定义安全词、作品 ID 黑名单 |
+| 内容安全 | 普通分级限制与内置安全词可按群独立开关；自定义安全词、作品 ID 黑名单全局生效 |
 | 每日签到 | H 纸张画册卡片、竖向随机背景、金币、好感度、连签、商店与主题 |
 | 管理中心 | 群排行与趋势、成员数值、安全词与黑名单、签到备份 |
 | 稳定性 | 0–7 个自然日去重、发送失败重试、临时文件自动清理 |
+
+管理中心的“内容安全”页提供两个互相独立的群级开关：“仅普通分级”和“启用内置安全词”。旧数据库、未配置群和私聊都保持两项开启；关闭内置词不会影响全局自定义安全词，作品 ID 黑名单也始终全局生效。群策略保存在签到 SQLite 数据库中，签到 JSON 导入不会重置这些运行时设置。
 
 > 主要面向 QQ OneBot / aiocqhttp。其他平台会尽量降级为逐条发送，请自行测试兼容性。
 
@@ -177,7 +179,7 @@ AstrBot WebUI 插件页的「pluginCenter」可：
 | --- | --- | --- |
 | `pixiv_refresh_token` | Pixiv refresh_token，可选回退 | 空 |
 | `lolicon_api_url` | Lolicon 首选图片源地址；留空时停用 Lolicon | `https://api.lolicon.app/setu/v2` |
-| `lolicon_exclude_ai` | 请求 Lolicon 时排除 AI 作品；R18 始终关闭 | `true` |
+| `lolicon_exclude_ai` | 请求 Lolicon 时排除 AI 作品；R18/普通混合由群级“仅普通分级”开关决定 | `true` |
 | `lolicon_image_proxy_origins` | 可选 Lolicon 图片反代 origin，多行按顺序轮换；不代理 API 或 Pixiv 登录 | 空 |
 | `filter_manga` | 过滤 Pixiv 回退结果中的漫画作品 | `true` |
 | `max_count` | 单次最大发送数量，范围 1-20 | `5` |

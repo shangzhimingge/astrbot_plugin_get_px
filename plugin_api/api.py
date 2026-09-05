@@ -83,6 +83,12 @@ class PluginWebApi:
                 "Get content safety policy",
             ),
             (
+                "content-safety/group-policy",
+                self.content_safety_group_policy,
+                ["POST"],
+                "Update a group content safety policy",
+            ),
+            (
                 "content-safety/terms/add",
                 self.content_safety_term_add,
                 ["POST"],
@@ -294,19 +300,75 @@ class PluginWebApi:
     async def content_safety(self):
         if self.plugin.image_index is None:
             return self._unavailable("内容安全数据尚未初始化")
+        if self.plugin.checkin_store is None:
+            return self._unavailable("群内容安全设置尚未初始化")
         try:
             custom_terms = await self.plugin.image_index.list_safety_terms()
+            group_id = str(request.args.get("group_id", "") or "").strip()
+            group_policy = None
+            if group_id:
+                group_policy = await self.plugin.checkin_store.get_group_content_safety(
+                    group_id
+                )
+            general_only = (
+                bool(group_policy["general_only_enabled"])
+                if group_policy is not None
+                else True
+            )
             return jsonify(
                 {
                     "success": True,
-                    "rating_policy": "general_only",
-                    "rating_label": "仅允许普通作品",
+                    "rating_policy": (
+                        "general_only" if general_only else "allow_sensitive"
+                    ),
+                    "rating_label": (
+                        "仅允许普通分级作品"
+                        if general_only
+                        else "允许普通与 R18 分级作品"
+                    ),
                     "builtin_terms": list(BUILTIN_SAFETY_TERMS),
                     "custom_terms": custom_terms,
+                    "default_group_policy": {
+                        "general_only_enabled": True,
+                        "builtin_terms_enabled": True,
+                    },
+                    "private_policy": {
+                        "general_only_enabled": True,
+                        "builtin_terms_enabled": True,
+                    },
+                    **({"group_policy": group_policy} if group_policy else {}),
                 }
             )
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc:
             return self.internal_error("读取内容安全策略", exc)
+
+    async def content_safety_group_policy(self):
+        if self.plugin.checkin_store is None:
+            return self._unavailable("群内容安全设置尚未初始化")
+        payload = await self._request_json_object()
+        if payload is None:
+            return jsonify({"success": False, "error": "请求内容必须是对象"}), 400
+        required = {
+            "group_id",
+            "general_only_enabled",
+            "builtin_terms_enabled",
+        }
+        if not required.issubset(payload):
+            return jsonify({"success": False, "error": "缺少群策略必填字段"}), 400
+        try:
+            policy = await self.plugin.checkin_store.set_group_content_safety(
+                payload["group_id"],
+                general_only_enabled=payload["general_only_enabled"],
+                builtin_terms_enabled=payload["builtin_terms_enabled"],
+                updated_by="web",
+            )
+            return jsonify({"success": True, "group_policy": policy})
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return self.internal_error("更新群内容安全策略", exc)
 
     async def content_safety_term_add(self):
         if self.plugin.image_index is None:

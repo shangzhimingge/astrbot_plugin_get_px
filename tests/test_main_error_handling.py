@@ -25,12 +25,14 @@ from astrbot_plugin_get_px.checkin import (  # noqa: E402
     UnversionedCheckinDatabaseError,
 )
 from astrbot_plugin_get_px.checkin.card import CardBackground  # noqa: E402
+from astrbot_plugin_get_px.pixiv.safety import ContentSafetyPolicy  # noqa: E402
 
 
 class _FakeEvent:
-    def __init__(self, order=None, *, fail_send=False):
+    def __init__(self, order=None, *, fail_send=False, group_id=""):
         self.order = order if order is not None else []
         self.fail_send = fail_send
+        self.group_id = group_id
         self.sent = []
         self.unified_msg_origin = "private:10001"
         self.stopped = False
@@ -42,7 +44,7 @@ class _FakeEvent:
         return "Alice"
 
     def get_group_id(self):
-        return ""
+        return self.group_id
 
     def get_platform_name(self):
         return "aiocqhttp"
@@ -211,6 +213,30 @@ class _FakeCache:
         self.cache_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(rendered_path, self.cache_path)
         self.hit = True
+        return self.cache_path
+
+
+class _PolicyAwareFakeCache(_FakeCache):
+    def __init__(self, cache_path: Path, order):
+        super().__init__(cache_path, order)
+        self.entries: set[str] = set()
+
+    def cache_key(self, **kwargs):
+        self.key_inputs.append(kwargs)
+        return json.dumps(kwargs, ensure_ascii=False, sort_keys=True, default=str)
+
+    def get(self, date_key, key, *, expected_size=None):
+        self.order.append("cache_get")
+        self.get_calls.append((date_key, key))
+        return self.cache_path if key in self.entries else None
+
+    async def store(self, date_key, key, renderer, *, expected_size=None):
+        self.order.append("cache_store")
+        self.store_calls.append((date_key, key))
+        rendered_path = Path(await renderer())
+        self.cache_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(rendered_path, self.cache_path)
+        self.entries.add(key)
         return self.cache_path
 
 
@@ -587,6 +613,100 @@ class MainErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(plugin.checkin_store.background_updates, [])
             self.assertLess(order.index("cache_get"), order.index("render"))
             self.assertLess(order.index("render"), order.index("send"))
+
+    async def _assert_duplicate_cache_policy_transition(
+        self,
+        *,
+        first_event: _FakeEvent,
+        first_policy: ContentSafetyPolicy,
+        second_event: _FakeEvent,
+        second_policy: ContentSafetyPolicy,
+    ) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            order = []
+            record = _record()
+            result = CheckinResult(_profile(), record, duplicate=True)
+            plugin = _plugin_for_checkin(tmp, result, order)
+            plugin.checkin_cache = _PolicyAwareFakeCache(
+                Path(tmp) / "cache" / "card.jpg", order
+            )
+            plugin._content_safety_policy = AsyncMock(
+                side_effect=[first_policy, second_policy]
+            )
+            restored = CardBackground(
+                mode="fallback",
+                source="fallback",
+            )
+            plugin._restore_checkin_background.return_value = restored
+            rendered = Path(tmp) / "rendered.jpg"
+
+            async def render(*_args, **_kwargs):
+                order.append("render")
+                return _make_card(rendered)
+
+            plugin._render_checkin_card.side_effect = render
+            first_event.order = order
+            second_event.order = order
+
+            self.assertEqual(await _collect(plugin._handle_checkin(first_event)), [])
+            self.assertEqual(await _collect(plugin._handle_checkin(second_event)), [])
+
+            self.assertEqual(plugin._render_checkin_card.await_count, 2)
+            self.assertEqual(plugin._restore_checkin_background.await_count, 2)
+            restore_policies = [
+                call.kwargs["policy"]
+                for call in plugin._restore_checkin_background.await_args_list
+            ]
+            self.assertIs(restore_policies[0], first_policy)
+            self.assertIs(restore_policies[1], second_policy)
+            cache_identities = {
+                json.dumps(
+                    item["view_model"]["content_safety_policy"],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                )
+                for item in plugin.checkin_cache.key_inputs
+            }
+            self.assertEqual(
+                cache_identities,
+                {
+                    json.dumps(
+                        first_policy.cache_identity(),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                    json.dumps(
+                        second_policy.cache_identity(),
+                        ensure_ascii=False,
+                        sort_keys=True,
+                    ),
+                },
+            )
+            self.assertEqual(len(plugin.checkin_cache.entries), 2)
+
+    async def test_checkin_cache_separates_relaxed_group_from_strict_group(self):
+        await self._assert_duplicate_cache_policy_transition(
+            first_event=_FakeEvent(group_id="group-a"),
+            first_policy=ContentSafetyPolicy(False, False, "group-a"),
+            second_event=_FakeEvent(group_id="group-b"),
+            second_policy=ContentSafetyPolicy(True, True, "group-b"),
+        )
+
+    async def test_checkin_cache_invalidates_when_same_group_reenables_safety(self):
+        await self._assert_duplicate_cache_policy_transition(
+            first_event=_FakeEvent(group_id="group-a"),
+            first_policy=ContentSafetyPolicy(False, False, "group-a"),
+            second_event=_FakeEvent(group_id="group-a"),
+            second_policy=ContentSafetyPolicy(True, True, "group-a"),
+        )
+
+    async def test_checkin_cache_separates_relaxed_group_from_private_chat(self):
+        await self._assert_duplicate_cache_policy_transition(
+            first_event=_FakeEvent(group_id="group-a"),
+            first_policy=ContentSafetyPolicy(False, False, "group-a"),
+            second_event=_FakeEvent(),
+            second_policy=ContentSafetyPolicy(),
+        )
 
     async def test_first_checkin_persists_content_then_rendered_artwork_and_usage_after_send(
         self,

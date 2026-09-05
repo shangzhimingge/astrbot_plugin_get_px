@@ -15,12 +15,16 @@
 | `downgrade_limit_mb` | `float` | `20.0` | 原图自动降级阈值（MB），超过此大小时自动降低质量 |
 | `p_coin_cost` | `int` | `20` | `/p`（以及自然语言触发）成功发图每张消耗的金币；范围 `0-500`，`0` 表示免费。金币不足时仅提醒，图片下载或发送失败不扣币 |
 
-## 内容安全配置
+## 运行时群内容安全策略
 
-| 字段 | 类型 | 默认值 | 说明 |
+普通分级限制和内置安全词不是 `_conf_schema.json` 中的全局静态配置，而是在管理中心按群保存的两个独立布尔项：
+
+| 策略 | 未配置群 | 私聊 | 关闭后的边界 |
 | --- | --- | --- | --- |
-| `enable_content_safety` | `bool` | `true` | 是否启用内容安全过滤 |
-| `rating_policy` | `enum` | `general_only` | 分级策略：`general_only`（全年龄）、`allow_sensitive`（含敏感）、`r18_only`（仅R18） |
+| 仅普通分级 | 开启 | 固定开启 | Lolicon 请求普通/R18 混合候选，Pixiv 回退不再剔除受限分级 |
+| 启用内置安全词 | 开启 | 固定开启 | 仅跳过内置词；自定义安全词仍全局生效 |
+
+作品 ID 黑名单始终全局生效。群策略保存在 `checkin.sqlite3` 的 `group_content_safety` 表中；签到 JSON 导入只替换签到历史，不重置运行时群策略。
 
 ## Pixiv 配置
 
@@ -69,7 +73,7 @@
 - `image_quality` 不影响签到背景，签到卡与签到日历的背景画质与输出分辨率均由 `checkin_card_quality_tier` 独立控制。
 - `forward_threshold` 按成功下载的图片数量判断；仅 aiocqhttp 平台会尝试合并转发，其他平台或合并转发失败时始终逐条发送。旧配置中的 `send_as_forward` 仅在新字段缺失时兼容：`true` 等价于 `0`，`false` 等价于 `20`。
 - `downgrade_limit_mb` 为 0 时禁用自动降级，下载失败时直接报错。
-- `rating_policy` 修改后立即生效，但不影响已下载的缓存图片。
+- 群内容安全策略保存后立即用于后续取图与已保存在线背景的复核，不主动删除缓存。
 - `pixiv_refresh_token` 留空时 Lolicon 失败会直接报错，不进行 Pixiv 回退。
 - 签到主题价格可配置为 0–5000，设为 0 时仍需完成一次免费购买。
 - `checkin_greeting_ai_prompt` 是用户自定义部分，系统固定约束通过代码提供。
