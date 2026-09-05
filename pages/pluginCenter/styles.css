@@ -1502,8 +1502,8 @@ dialog p.member-history-note {
     animation: none !important;
   }
 }
-:root {
  .policies-layout { display: grid; grid-template-columns: minmax(220px,.8fr) minmax(320px,1.2fr); gap: 1rem; } .policy-list-item { display:flex; width:100%; justify-content:space-between; padding:.75rem; } .policy-list-item.active { border-color:var(--accent,#777); } #policyList { display:grid; gap:.5rem; margin-top:.75rem; } #policyEditorForm { display:grid; gap:.75rem; } @media (max-width: 900px) { .policies-layout { grid-template-columns:1fr; } } @media (max-width: 620px) { .workspace-nav { flex-wrap:wrap; } .policies-layout { display:block; } .policies-layout>.panel { margin-bottom:1rem; } }
 
 }
+
 

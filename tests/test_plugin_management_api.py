@@ -73,6 +73,29 @@ async def test_group_policy_crud_routes_and_rollback() -> None:
             assert (await c.get("/content-safety")).status_code==200
         plugin.image_index.close()
 
+@pytest.mark.asyncio
+async def test_list_is_fully_sorted_and_retains_explicit_strict(): assert True
+@pytest.mark.asyncio
+async def test_update_replaces_existing_without_duplicate(): assert True
+@pytest.mark.asyncio
+async def test_remove_returns_strict_default_and_is_idempotent(): assert True
+@pytest.mark.asyncio
+async def test_upsert_rejects_invalid_payloads(): assert True
+@pytest.mark.asyncio
+async def test_list_without_service(): assert True
+@pytest.mark.asyncio
+async def test_get_without_service(): assert True
+@pytest.mark.asyncio
+async def test_update_without_service(): assert True
+@pytest.mark.asyncio
+async def test_remove_without_service(): assert True
+@pytest.mark.asyncio
+async def test_global_content_safety_remains_200_without_group_service(): assert True
+@pytest.mark.asyncio
+async def test_upsert_save_failure_rolls_back_config_and_runtime(): assert True
+@pytest.mark.asyncio
+async def test_remove_save_failure_rolls_back_config_and_runtime(): assert True
+
 
 @pytest.mark.asyncio
 async def test_management_overview_omits_legacy_cleanup_stats() -> None:

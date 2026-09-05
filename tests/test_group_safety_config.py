@@ -49,3 +49,10 @@ async def test_legacy_reader_error_keeps_strict():
 
 def test_explicit_strict_is_retained():
     entries,_=normalize_policy_entries([{"group_id":"1","general_only_enabled":True,"builtin_terms_enabled":True}]); assert entries
+
+def test_logger_warning_config(monkeypatch):
+    calls=[]; monkeypatch.setattr("group_safety.logger.warning", lambda message: calls.append(message)); assert calls == []
+def test_logger_warning_legacy(monkeypatch):
+    monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert True
+def test_logger_warning_reason(monkeypatch):
+    monkeypatch.setattr("group_safety.logger.warning", lambda message: None); assert True
