@@ -20,7 +20,7 @@
         </div>
         <div class="safety-lock" role="status" aria-label="内容安全状态">
           <span class="pulse" aria-hidden="true"></span>
-          <span><strong>安全策略已锁定</strong>仅允许普通分级 (x_restrict = 0) 作品</span>
+          <span><strong>群策略可配置</strong><span id="safetyStatusSummary">私聊保持严格；群聊可分别设置分级与内置词</span></span>
         </div>
       </header>
 
@@ -120,11 +120,39 @@
           <div class="section-heading wide">
             <p>CONTENT GUARD</p>
             <h2 id="safetyTitle">内容安全策略</h2>
-            <span>安全策略已强制开启。系统屏蔽词在搜索前拦截，黑名单作品在返回后自动阻断。</span>
+            <span>群聊可单独设置普通分级限制和内置安全词。私聊固定使用严格策略。</span>
           </div>
 
+          <section class="panel group-policy-panel" aria-labelledby="groupPolicyTitle">
+            <div class="panel-title">
+              <div>
+                <p>GROUP POLICY</p>
+                <h3 id="groupPolicyTitle">群内容安全策略</h3>
+              </div>
+              <span id="groupPolicyStatus" class="count" aria-live="polite">请选择群</span>
+            </div>
+            <form id="groupPolicyForm" class="group-policy-form">
+              <div class="group-policy-picker">
+                <label for="safetyGroupInput">群 ID</label>
+                <input id="safetyGroupInput" name="safety_group_id" list="safetyGroupOptions" maxlength="128" autocomplete="off" spellcheck="false" placeholder="选择或输入群 ID" required />
+                <datalist id="safetyGroupOptions"></datalist>
+              </div>
+              <label class="policy-toggle" for="generalOnlyToggle">
+                <input id="generalOnlyToggle" type="checkbox" checked />
+                <span><strong>仅普通分级</strong><small>关闭后允许普通与 R18 混合候选，并同步调整上游请求。</small></span>
+              </label>
+              <label class="policy-toggle" for="builtinTermsToggle">
+                <input id="builtinTermsToggle" type="checkbox" checked />
+                <span><strong>启用内置安全词</strong><small>关闭仅跳过内置词；自定义安全词仍全局生效。</small></span>
+              </label>
+              <button id="groupPolicySave" type="submit">保存群策略</button>
+              <p id="groupPolicyError" class="form-error" aria-live="polite"></p>
+            </form>
+            <p class="policy-boundary">未配置群默认两项开启；私聊固定两项开启；自定义安全词与作品 ID 黑名单始终全局生效。</p>
+          </section>
+
           <div class="policy-strip">
-            <div><b>1</b><span>分级限制<strong>仅 x_restrict = 0</strong></span></div>
+            <div><b>1</b><span>分级限制<strong>按群设置</strong></span></div>
             <div><b>2</b><span>文本检查<strong>标题 / 简介 / 标签 / 翻译标签</strong></span></div>
             <div><b>3</b><span>ID 拦截<strong>Pixiv 作品黑名单</strong></span></div>
           </div>

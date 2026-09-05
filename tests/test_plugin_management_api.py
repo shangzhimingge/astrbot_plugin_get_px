@@ -114,6 +114,64 @@ async def test_management_api_safety_and_blacklist_flow() -> None:
 
 
 @pytest.mark.asyncio
+async def test_management_api_group_safety_policy_round_trip_and_validation() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = build_plugin(tmp)
+        api = PluginWebApi(
+            plugin,
+            plugin_name="astrbot_plugin_get_px",
+            log_prefix="[GetPx]",
+            internal_error_message="internal",
+        )
+        app = Quart(__name__)
+        app.add_url_rule("/safety", view_func=api.content_safety, methods=["GET"])
+        app.add_url_rule(
+            "/group-policy",
+            view_func=api.content_safety_group_policy,
+            methods=["POST"],
+        )
+        try:
+            async with app.test_app():
+                client = app.test_client()
+                default = await (await client.get("/safety?group_id=unknown")).get_json()
+                updated_response = await client.post(
+                    "/group-policy",
+                    json={
+                        "group_id": "unknown",
+                        "general_only_enabled": False,
+                        "builtin_terms_enabled": True,
+                    },
+                )
+                updated = await updated_response.get_json()
+                fetched = await (await client.get("/safety?group_id=unknown")).get_json()
+                invalid = await client.post(
+                    "/group-policy",
+                    json={
+                        "group_id": "unknown",
+                        "general_only_enabled": "false",
+                        "builtin_terms_enabled": True,
+                    },
+                )
+                invalid_group_id = await client.post(
+                    "/group-policy",
+                    json={
+                        "group_id": [],
+                        "general_only_enabled": False,
+                        "builtin_terms_enabled": True,
+                    },
+                )
+
+            assert default["group_policy"]["is_default"] is True
+            assert updated_response.status_code == 200
+            assert updated["group_policy"]["general_only_enabled"] is False
+            assert fetched["rating_policy"] == "allow_sensitive"
+            assert invalid.status_code == 400
+            assert invalid_group_id.status_code == 400
+        finally:
+            plugin.image_index.close()
+
+
+@pytest.mark.asyncio
 async def test_management_api_validates_ranking_and_illustration_ids() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         plugin = build_plugin(tmp)

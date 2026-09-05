@@ -118,3 +118,9 @@
 2. 提供迁移指南或兼容方案
 3. 补充充分的测试覆盖
 4. 更新相关文档
+# 内容安全与数据库迁移约束
+
+- 群策略属于 `checkin.sqlite3` 的运行时配置，不加入 `_conf_schema.json`，也不随签到 JSON 导入清空。
+- 修改签到数据库 schema 时递增 `CHECKIN_DB_SCHEMA_VERSION`，兼容已知旧版本，并在执行 DDL 前使用 SQLite backup API 写入 `checkin_migration_backups/`。
+- 内容安全调用链必须复用一次请求解析得到的 `ContentSafetyPolicy`；自定义安全词和作品 ID 黑名单不受两个群开关影响。
+- 没有群上下文或读取策略异常时保持普通分级与内置词均开启。

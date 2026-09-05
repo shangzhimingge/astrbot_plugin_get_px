@@ -7,6 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from astrbot_plugin_get_px.pixiv.filters import FiltersMixin
 from astrbot_plugin_get_px.pixiv.index import ImageIndexStore
+from astrbot_plugin_get_px.pixiv.safety import ContentSafetyPolicy
 
 
 class FilteringTest(unittest.TestCase):
@@ -33,6 +34,81 @@ class FilteringTest(unittest.TestCase):
 
 
 class SafetyFilteringTest(unittest.IsolatedAsyncioTestCase):
+    async def test_all_four_switch_combinations_apply_independently(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mixin = object.__new__(FiltersMixin)
+            mixin.image_index = ImageIndexStore(tmp)
+            try:
+                candidates = [
+                    {"id": "safe", "x_restrict": 0, "title": "safe", "tags": []},
+                    {"id": "rated", "x_restrict": 1, "title": "safe", "tags": []},
+                    {"id": "builtin", "x_restrict": 0, "title": "guro", "tags": []},
+                ]
+                expected = {
+                    (True, True): ["safe"],
+                    (True, False): ["safe", "builtin"],
+                    (False, True): ["safe", "rated"],
+                    (False, False): ["safe", "rated", "builtin"],
+                }
+                for switches, ids in expected.items():
+                    with self.subTest(switches=switches):
+                        result = await mixin._filter_blacklisted_illusts(
+                            candidates, ContentSafetyPolicy(*switches)
+                        )
+                        self.assertEqual([item["id"] for item in result], ids)
+            finally:
+                mixin.image_index.close()
+
+    async def test_group_switches_do_not_disable_custom_terms_or_id_blacklist(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            mixin = object.__new__(FiltersMixin)
+            mixin.image_index = ImageIndexStore(tmp)
+            try:
+                await mixin.image_index.add_safety_term("customblocked", added_by="test")
+                await mixin.image_index.add_blacklist_illust(illust_id="99")
+                policy = ContentSafetyPolicy(
+                    general_only_enabled=False,
+                    builtin_terms_enabled=False,
+                )
+                self.assertFalse(await mixin._blocked_query_term("guro", policy))
+                self.assertTrue(
+                    await mixin._blocked_query_term("customblocked", policy)
+                )
+                filtered = await mixin._filter_blacklisted_illusts(
+                    [
+                        {"id": "1", "x_restrict": 1, "title": "guro", "tags": []},
+                        {"id": "2", "x_restrict": 1, "title": "customblocked", "tags": []},
+                        {"id": "99", "x_restrict": 0, "title": "safe", "tags": []},
+                    ],
+                    policy,
+                )
+                self.assertEqual([item["id"] for item in filtered], ["1"])
+            finally:
+                mixin.image_index.close()
+
+    async def test_private_and_policy_read_failures_use_strict_defaults(self):
+        class Event:
+            def __init__(self, group_id):
+                self.group_id = group_id
+
+            def get_group_id(self):
+                return self.group_id
+
+        class BrokenStore:
+            async def get_group_content_safety(self, group_id):
+                raise OSError(group_id)
+
+        mixin = object.__new__(FiltersMixin)
+        mixin.checkin_store = BrokenStore()
+        self.assertEqual(
+            await mixin._content_safety_policy(Event("")),
+            ContentSafetyPolicy(),
+        )
+        self.assertEqual(
+            await mixin._content_safety_policy(Event("group-a")),
+            ContentSafetyPolicy(),
+        )
+
     async def test_builtin_and_custom_terms_filter_queries_and_works(self):
         with tempfile.TemporaryDirectory() as tmp:
             mixin = object.__new__(FiltersMixin)

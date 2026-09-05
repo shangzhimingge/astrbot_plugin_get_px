@@ -2,6 +2,26 @@ from __future__ import annotations
 
 import re
 import unicodedata
+from dataclasses import dataclass
+
+
+@dataclass(frozen=True, slots=True)
+class ContentSafetyPolicy:
+    """Immutable per-request content-safety policy snapshot."""
+
+    general_only_enabled: bool = True
+    builtin_terms_enabled: bool = True
+    group_id: str = ""
+
+    def cache_identity(self) -> dict[str, object]:
+        return {
+            "group_id": self.group_id,
+            "general_only_enabled": self.general_only_enabled,
+            "builtin_terms_enabled": self.builtin_terms_enabled,
+        }
+
+
+STRICT_CONTENT_SAFETY_POLICY = ContentSafetyPolicy()
 
 
 BUILTIN_SAFETY_TERMS = (

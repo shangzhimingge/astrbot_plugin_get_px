@@ -192,6 +192,7 @@ class CheckinApplicationMixin:
         )
         stage = "background_selection"
         cache_hit = False
+        policy = await self._content_safety_policy(event)
         try:
             if result.duplicate:
                 background = self._checkin_background_from_record(record)
@@ -200,6 +201,7 @@ class CheckinApplicationMixin:
                     event,
                     record,
                     render_tier=preferred_tier,
+                    policy=policy,
                 )
                 claim_held = bool(
                     background is not None
@@ -218,11 +220,14 @@ class CheckinApplicationMixin:
                 bot_name=bot_name,
                 user_title=user_title,
                 preferred_tier=preferred_tier,
+                policy=policy,
             )
             cache_hit = cached_path is not None
             if cached_path is None and result.duplicate:
                 stage = "background_restore"
-                background = await self._restore_checkin_background(event, record)
+                background = await self._restore_checkin_background(
+                    event, record, policy=policy
+                )
                 restored_quality = str(getattr(background, "quality", "") or "")
                 saved_quality = str(
                     getattr(record, "background_quality", "") or ""
@@ -270,6 +275,7 @@ class CheckinApplicationMixin:
                     user_title=user_title,
                     preferred_tier=preferred_tier,
                     cache=cache,
+                    policy=policy,
                 )
 
             if not result.duplicate and background is not None:
@@ -683,6 +689,7 @@ class CheckinApplicationMixin:
         bot_name: str,
         user_title: str = "",
         render_tier: str | None = None,
+        policy=None,
     ) -> str:
         background = background or self._checkin_background_from_record(record)
         identity_background = CardBackground(
@@ -719,6 +726,8 @@ class CheckinApplicationMixin:
         view_model["background_quality"] = str(
             background.quality or render_spec.background_quality
         )
+        if policy is not None:
+            view_model["content_safety_policy"] = policy.cache_identity()
         return self.checkin_cache.cache_key(
             date_key=record.date_key,
             user_id=record.user_id,
