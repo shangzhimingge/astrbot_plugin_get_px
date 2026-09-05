@@ -7,7 +7,8 @@ const state = {
   rankingType: "today",
   trendDays: 7,
   safety: { builtin_terms: [], custom_terms: [] },
-  groupPolicies: [], selectedPolicyGroupId: "", policyQuery: "", policyDraft: null,
+  groupPolicies: [], selectedPolicyGroupId: "", policyQuery: "", policySnapshot: null, policyDraft: null,
+  policyLoading: false, policySaving: false, policyDeleting: false, policySavedAt: "",
   blacklist: [],
   thumbs: {},
   members: [],
@@ -584,10 +585,12 @@ function renderPolicyManager() {
   const q = (state.policyQuery || "").toLowerCase();
   const rows = state.groupPolicies.filter(p => String(p.group_id).toLowerCase().includes(q));
   els.policyList.innerHTML = rows.map(p => `<button type="button" class="policy-list-item ${p.group_id === state.selectedPolicyGroupId ? "active" : ""}" data-policy-group="${escapeHtml(p.group_id)}"><strong>${escapeHtml(p.group_id)}</strong><small>${p.general_only_enabled ? "仅普通" : "混合分级"} · ${p.builtin_terms_enabled ? "内置词开" : "内置词关"}</small></button>`).join("") || '<div class="empty">暂无群策略</div>';
-  els.policyList.querySelectorAll("[data-policy-group]").forEach(b => b.addEventListener("click", () => { state.selectedPolicyGroupId = b.dataset.policyGroup; renderPolicyManager(); }));
+  els.policyList.querySelectorAll("[data-policy-group]").forEach(b => b.addEventListener("click", () => selectPolicy(b.dataset.policyGroup)));
   const p = state.groupPolicies.find(x => x.group_id === state.selectedPolicyGroupId);
-  if (p) { els.policyGroupId.value = p.group_id; els.policyGeneralToggle.checked = p.general_only_enabled; els.policyBuiltinToggle.checked = p.builtin_terms_enabled; els.policyEditorStatus.textContent = "已保存"; els.policyDeleteBtn.disabled = false; } else { els.policyGroupId.value = ""; els.policyGeneralToggle.checked = true; els.policyBuiltinToggle.checked = true; els.policyEditorStatus.textContent = "请选择群"; els.policyDeleteBtn.disabled = true; }
+  if (p) { els.policyGroupId.value = p.group_id; els.policyGeneralToggle.checked = (state.policyDraft || p).general_only_enabled; els.policyBuiltinToggle.checked = (state.policyDraft || p).builtin_terms_enabled; els.policyEditorStatus.textContent = state.policySavedAt ? `保存于 ${state.policySavedAt}` : "已保存"; els.policyDeleteBtn.disabled = state.policyDeleting; } else { els.policyGroupId.value = ""; els.policyGeneralToggle.checked = true; els.policyBuiltinToggle.checked = true; els.policyEditorStatus.textContent = "请选择群"; els.policyDeleteBtn.disabled = true; }
 }
+
+function selectPolicy(groupId) { state.selectedPolicyGroupId = groupId; const p = state.groupPolicies.find(x => x.group_id === groupId); state.policySnapshot = p ? {...p} : null; state.policyDraft = p ? {...p} : null; renderPolicyManager(); }
 
 async function reloadPolicies() { const r = await apiGet("content-safety/group-policies"); state.groupPolicies = r.group_policies || []; if (!state.groupPolicies.some(p => p.group_id === state.selectedPolicyGroupId)) state.selectedPolicyGroupId = state.groupPolicies[0]?.group_id || ""; renderPolicyManager(); }
 
@@ -839,8 +842,8 @@ function bindEvents() {
   els.policyAddBtn?.addEventListener("click", () => { els.policyAddInput.value = ""; els.policyAddDialog.showModal(); els.policyAddInput.focus(); });
   els.policyAddCancel?.addEventListener("click", () => els.policyAddDialog.close());
   els.policyAddForm?.addEventListener("submit", async (event) => { event.preventDefault(); const groupId = els.policyAddInput.value.trim(); if (!groupId) return; if (state.groupPolicies.some(p => p.group_id === groupId)) { els.policyAddError.textContent = "该群已存在"; return; } try { const result = await apiPost("content-safety/group-policy", {group_id: groupId, general_only_enabled: true, builtin_terms_enabled: true}); state.groupPolicies.push(result.group_policy); state.groupPolicies.sort((a,b)=>a.group_id.localeCompare(b.group_id)); state.selectedPolicyGroupId = groupId; els.policyAddDialog.close(); renderPolicyManager(); showToast("群策略已添加"); } catch (e) { els.policyAddError.textContent = e.message; } });
-  els.policyEditorForm?.addEventListener("submit", async (event) => { event.preventDefault(); const groupId = els.policyGroupId.value; try { const result = await apiPost("content-safety/group-policy", {group_id: groupId, general_only_enabled: els.policyGeneralToggle.checked, builtin_terms_enabled: els.policyBuiltinToggle.checked}); const i = state.groupPolicies.findIndex(p=>p.group_id===groupId); if(i>=0) state.groupPolicies[i]=result.group_policy; renderPolicyManager(); showToast("群策略已保存"); } catch(e) { els.policyError.textContent=e.message; } });
-  els.policyDeleteBtn?.addEventListener("click", async () => { const groupId = els.policyGroupId.value; if (!groupId || !await confirmAction("删除群策略", "删除后恢复默认严格策略，确认继续吗？")) return; try { await apiPost("content-safety/group-policy/remove", {group_id: groupId}); state.groupPolicies = state.groupPolicies.filter(p=>p.group_id!==groupId); state.selectedPolicyGroupId = state.groupPolicies[0]?.group_id || ""; renderPolicyManager(); showToast("群策略已删除"); } catch(e) { els.policyError.textContent=e.message; } });
+  els.policyEditorForm?.addEventListener("submit", async (event) => { event.preventDefault(); const groupId = els.policyGroupId.value; if (state.policySaving) return; state.policySaving=true; state.policyDraft={...state.policySnapshot,general_only_enabled:els.policyGeneralToggle.checked,builtin_terms_enabled:els.policyBuiltinToggle.checked}; els.policyEditorForm.setAttribute("aria-busy","true"); try { const result = await apiPost("content-safety/group-policy", {group_id: groupId, general_only_enabled: state.policyDraft.general_only_enabled, builtin_terms_enabled: state.policyDraft.builtin_terms_enabled}); const i = state.groupPolicies.findIndex(p=>p.group_id===groupId); if(i>=0) state.groupPolicies[i]=result.group_policy; state.policySnapshot={...result.group_policy}; state.policySavedAt=new Date().toLocaleString(); renderPolicyManager(); showToast("群策略已保存"); } catch(e) { state.policyDraft=state.policySnapshot?{...state.policySnapshot}:null; els.policyError.textContent=e.message; renderPolicyManager(); } finally { state.policySaving=false; els.policyEditorForm.removeAttribute("aria-busy"); } });
+  els.policyDeleteBtn?.addEventListener("click", async () => { const groupId = els.policyGroupId.value; if (!groupId || state.policyDeleting || !await confirmAction("删除群策略", "删除后恢复默认严格策略，确认继续吗？")) return; state.policyDeleting=true; els.policyEditorForm.setAttribute("aria-busy","true"); const oldIndex=state.groupPolicies.findIndex(p=>p.group_id===groupId); try { await apiPost("content-safety/group-policy/remove", {group_id: groupId}); state.groupPolicies = state.groupPolicies.filter(p=>p.group_id!==groupId); const next=Math.min(oldIndex,state.groupPolicies.length-1); state.selectedPolicyGroupId=state.groupPolicies[next]?.group_id||""; state.policySnapshot=state.policyDraft=null; renderPolicyManager(); if(!state.groupPolicies.length) requestAnimationFrame(()=>els.policyAddBtn.focus()); showToast("群策略已删除"); } catch(e) { els.policyError.textContent=e.message; } finally { state.policyDeleting=false; els.policyEditorForm.removeAttribute("aria-busy"); } });
   $("termForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = $("termInput");
@@ -956,5 +959,6 @@ async function start() {
 }
 
 start();
+
 
 

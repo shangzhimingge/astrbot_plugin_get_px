@@ -41,6 +41,11 @@ class GroupSafetyService:
         self.config, self.log_prefix, self._lock, self._policies = config, log_prefix, asyncio.Lock(), {}
     def _install(self, entries):
         self._policies = {str(x["group_id"]): {"group_id": str(x["group_id"]), "general_only_enabled": x["general_only_enabled"], "builtin_terms_enabled": x["builtin_terms_enabled"], "updated_by": "", "updated_at": "", "is_default": False} for x in entries}
+    def _log_warnings(self, source, warnings):
+        try:
+            from astrbot.api.all import logger
+            for warning in warnings: logger.warning(f"{self.log_prefix} {source}: {warning}")
+        except Exception: pass
     def _save_candidate(self, entries, migrated=True):
         old, old_migrated = self.config.get(CONFIG_KEY, []), self.config.get(MIGRATION_KEY, False)
         self.config[CONFIG_KEY], self.config[MIGRATION_KEY] = [dict(x) for x in entries], migrated
@@ -54,13 +59,19 @@ class GroupSafetyService:
         self._install(entries)
     async def initialize(self, legacy_store):
         async with self._lock:
-            entries, warnings = normalize_policy_entries(self.config.get(CONFIG_KEY, []))
+            raw = self.config.get(CONFIG_KEY, [])
+            entries, warnings = normalize_policy_entries(raw)
+            self._log_warnings("config", warnings)
             if self.config.get(MIGRATION_KEY, False): self._install(entries); return
-            if entries:
-                self._save_candidate(entries, True)
+            if isinstance(raw, list) and raw:
+                try: self._save_candidate(entries, True)
+                except Exception as exc: self._install(entries); self._log_warnings("config", [f"save failed error_type={type(exc).__name__}"])
                 return
-            legacy = await legacy_store.list_group_content_safety_records()
-            self._save_candidate(normalize_policy_entries(legacy)[0], True)
+            try: legacy = await legacy_store.list_group_content_safety_records()
+            except Exception as exc: self._install([]); self._log_warnings("legacy", [f"read failed error_type={type(exc).__name__}"]); return
+            legacy_entries, legacy_warnings = normalize_policy_entries(legacy); self._log_warnings("legacy", legacy_warnings)
+            try: self._save_candidate(legacy_entries, True)
+            except Exception as exc: self._install([]); self._log_warnings("legacy", [f"save failed error_type={type(exc).__name__}"])
     async def list_policies(self):
         async with self._lock: return [dict(self._policies[k]) for k in sorted(self._policies)]
     async def get_policy(self, group_id):
