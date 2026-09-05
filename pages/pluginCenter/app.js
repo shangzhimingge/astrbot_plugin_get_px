@@ -12,6 +12,7 @@ const state = {
   groupPolicyLoading: false,
   groupPolicySaving: false,
   groupPolicyRequestId: 0,
+  groupPolicies: [], selectedPolicyGroupId: "", policyQuery: "", policyDraft: null,
   blacklist: [],
   thumbs: {},
   members: [],
@@ -97,6 +98,10 @@ const els = {
   globalErrorMessage: $("globalErrorMessage"),
   termError: $("termError"),
   blacklistError: $("blacklistError"),
+  policyList: $("policyList"), policySearch: $("policySearch"), policyAddBtn: $("policyAddBtn"),
+  policyAddDialog: $("policyAddDialog"), policyAddForm: $("policyAddForm"), policyAddInput: $("policyAddInput"),
+  policyAddCancel: $("policyAddCancel"), policyEditorForm: $("policyEditorForm"), policyGroupId: $("policyGroupId"),
+  policyGeneralToggle: $("policyGeneralToggle"), policyBuiltinToggle: $("policyBuiltinToggle"), policyDeleteBtn: $("policyDeleteBtn"), policyError: $("policyError"), policyEditorStatus: $("policyEditorStatus"),
 };
 
 function escapeHtml(value) {
@@ -207,12 +212,13 @@ async function reloadAll() {
   const failures = [];
   let shouldLoadRanking = false;
   try {
-    const [overviewResult, groupsResult, safetyResult, blacklistResult] =
+    const [overviewResult, groupsResult, safetyResult, blacklistResult, policiesResult] =
       await Promise.allSettled([
         apiGet("overview"),
         apiGet("checkin-groups"),
         apiGet("content-safety"),
         apiGet("image-blacklist"),
+        apiGet("content-safety/group-policies"),
       ]);
 
     if (overviewResult.status === "fulfilled") {
@@ -254,20 +260,11 @@ async function reloadAll() {
       if (!state.loaded.safety) renderSafetyError();
     }
 
-    if (state.loaded.safety) {
-      if (!state.selectedSafetyGroup) {
-        state.selectedSafetyGroup = state.groups[0]?.group_id || "";
-      }
-      els.safetyGroupInput.value = state.selectedSafetyGroup;
-      renderSafetyPolicy();
-      if (state.selectedSafetyGroup) {
-        try {
-          await loadGroupSafetyPolicy(state.selectedSafetyGroup);
-        } catch (error) {
-          failures.push(errorMessage(error, "群内容安全策略读取失败"));
-        }
-      }
-    }
+    if (policiesResult.status === "fulfilled") {
+      state.groupPolicies = policiesResult.value.group_policies || [];
+      if (!state.selectedPolicyGroupId) state.selectedPolicyGroupId = state.groupPolicies[0]?.group_id || "";
+      renderPolicyManager();
+    } else failures.push(errorMessage(policiesResult.reason, "群策略读取失败"));
 
     if (blacklistResult.status === "fulfilled") {
       state.blacklist = Array.isArray(blacklistResult.value.records)
@@ -657,6 +654,18 @@ function renderSafetyError() {
   els.customTerms.innerHTML = '<div class="empty error">自定义安全词暂时无法读取。</div>';
 }
 
+function renderPolicyManager() {
+  if (!els.policyList) return;
+  const q = (state.policyQuery || "").toLowerCase();
+  const rows = state.groupPolicies.filter(p => String(p.group_id).toLowerCase().includes(q));
+  els.policyList.innerHTML = rows.map(p => `<button type="button" class="policy-list-item ${p.group_id === state.selectedPolicyGroupId ? "active" : ""}" data-policy-group="${escapeHtml(p.group_id)}"><strong>${escapeHtml(p.group_id)}</strong><small>${p.general_only_enabled ? "仅普通" : "混合分级"} · ${p.builtin_terms_enabled ? "内置词开" : "内置词关"}</small></button>`).join("") || '<div class="empty">暂无群策略</div>';
+  els.policyList.querySelectorAll("[data-policy-group]").forEach(b => b.addEventListener("click", () => { state.selectedPolicyGroupId = b.dataset.policyGroup; renderPolicyManager(); }));
+  const p = state.groupPolicies.find(x => x.group_id === state.selectedPolicyGroupId);
+  if (p) { els.policyGroupId.value = p.group_id; els.policyGeneralToggle.checked = p.general_only_enabled; els.policyBuiltinToggle.checked = p.builtin_terms_enabled; els.policyEditorStatus.textContent = "已保存"; els.policyDeleteBtn.disabled = false; } else { els.policyGroupId.value = ""; els.policyGeneralToggle.checked = true; els.policyBuiltinToggle.checked = true; els.policyEditorStatus.textContent = "请选择群"; els.policyDeleteBtn.disabled = true; }
+}
+
+async function reloadPolicies() { const r = await apiGet("content-safety/group-policies"); state.groupPolicies = r.group_policies || []; if (!state.groupPolicies.some(p => p.group_id === state.selectedPolicyGroupId)) state.selectedPolicyGroupId = state.groupPolicies[0]?.group_id || ""; renderPolicyManager(); }
+
 async function reloadSafety() {
   try {
     const params = state.selectedSafetyGroup
@@ -787,7 +796,7 @@ function backupFileError(file) {
 }
 
 function switchView(name) {
-  const validNames = new Set(["ranking", "members", "safety", "data"]);
+  const validNames = new Set(["ranking", "members", "safety", "policies", "data"]);
   if (!validNames.has(name)) name = "ranking";
   document.querySelectorAll(".workspace-nav [data-view]").forEach((button) =>
     button.classList.toggle("active", button.dataset.view === name));
@@ -805,6 +814,7 @@ function switchView(name) {
   if (name === "data" && !state.loaded.cache) {
     loadCacheStorage();
   }
+  if (name === "policies" && els.policyList && !state.groupPolicies.length) reloadPolicies().catch(e => showToast(e.message, "error"));
 }
 
 function confirmAction(title, message) {
@@ -904,53 +914,12 @@ function bindEvents() {
     }
   });
 
-  els.safetyGroupInput.addEventListener("change", async () => {
-    const groupId = els.safetyGroupInput.value.trim();
-    try {
-      await loadGroupSafetyPolicy(groupId);
-    } catch (error) {
-      showToast(error.message || "群策略读取失败", "error");
-      els.safetyGroupInput.focus();
-    }
-  });
-
-  $("groupPolicyForm").addEventListener("submit", async (event) => {
-    event.preventDefault();
-    const groupId = els.safetyGroupInput.value.trim();
-    if (!groupId || state.groupPolicySaving) return;
-    const generalOnlyEnabled = els.generalOnlyToggle.checked;
-    const builtinTermsEnabled = els.builtinTermsToggle.checked;
-    state.selectedSafetyGroup = groupId;
-    state.groupPolicySaving = true;
-    state.groupPolicy = {
-      ...(state.groupPolicy || {}),
-      group_id: groupId,
-      general_only_enabled: generalOnlyEnabled,
-      builtin_terms_enabled: builtinTermsEnabled,
-    };
-    els.groupPolicyError.textContent = "";
-    renderSafetyPolicy();
-    try {
-      const result = await apiPost("content-safety/group-policy", {
-        group_id: groupId,
-        general_only_enabled: generalOnlyEnabled,
-        builtin_terms_enabled: builtinTermsEnabled,
-      });
-      state.groupPolicy = result.group_policy;
-      showToast("群内容安全策略已保存");
-    } catch (error) {
-      els.groupPolicyError.textContent = error.message || "保存失败，已恢复服务器设置。";
-      showToast(els.groupPolicyError.textContent, "error");
-      try {
-        await loadGroupSafetyPolicy(groupId);
-      } catch { /* keep the last successfully rendered server value */ }
-      els.groupPolicySave.focus();
-    } finally {
-      state.groupPolicySaving = false;
-      renderSafetyPolicy();
-    }
-  });
-
+  els.policySearch?.addEventListener("input", () => { state.policyQuery = els.policySearch.value; renderPolicyManager(); });
+  els.policyAddBtn?.addEventListener("click", () => { els.policyAddInput.value = ""; els.policyAddDialog.showModal(); els.policyAddInput.focus(); });
+  els.policyAddCancel?.addEventListener("click", () => els.policyAddDialog.close());
+  els.policyAddForm?.addEventListener("submit", async (event) => { event.preventDefault(); const groupId = els.policyAddInput.value.trim(); if (!groupId) return; if (state.groupPolicies.some(p => p.group_id === groupId)) { els.policyAddError.textContent = "该群已存在"; return; } try { const result = await apiPost("content-safety/group-policy", {group_id: groupId, general_only_enabled: true, builtin_terms_enabled: true}); state.groupPolicies.push(result.group_policy); state.groupPolicies.sort((a,b)=>a.group_id.localeCompare(b.group_id)); state.selectedPolicyGroupId = groupId; els.policyAddDialog.close(); renderPolicyManager(); showToast("群策略已添加"); } catch (e) { els.policyAddError.textContent = e.message; } });
+  els.policyEditorForm?.addEventListener("submit", async (event) => { event.preventDefault(); const groupId = els.policyGroupId.value; try { const result = await apiPost("content-safety/group-policy", {group_id: groupId, general_only_enabled: els.policyGeneralToggle.checked, builtin_terms_enabled: els.policyBuiltinToggle.checked}); const i = state.groupPolicies.findIndex(p=>p.group_id===groupId); if(i>=0) state.groupPolicies[i]=result.group_policy; renderPolicyManager(); showToast("群策略已保存"); } catch(e) { els.policyError.textContent=e.message; } });
+  els.policyDeleteBtn?.addEventListener("click", async () => { const groupId = els.policyGroupId.value; if (!groupId || !await confirmAction("删除群策略", "删除后恢复默认严格策略，确认继续吗？")) return; try { await apiPost("content-safety/group-policy/remove", {group_id: groupId}); state.groupPolicies = state.groupPolicies.filter(p=>p.group_id!==groupId); state.selectedPolicyGroupId = state.groupPolicies[0]?.group_id || ""; renderPolicyManager(); showToast("群策略已删除"); } catch(e) { els.policyError.textContent=e.message; } });
   $("termForm").addEventListener("submit", async (event) => {
     event.preventDefault();
     const input = $("termInput");
@@ -1066,3 +1035,4 @@ async function start() {
 }
 
 start();
+

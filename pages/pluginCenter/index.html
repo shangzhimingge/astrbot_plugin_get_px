@@ -35,6 +35,7 @@
         <button class="active" data-view="ranking" type="button">群排行</button>
         <button data-view="members" type="button">成员数值</button>
         <button data-view="safety" type="button">内容安全</button>
+        <button data-view="policies" type="button">群策略配置</button>
         <button data-view="data" type="button">数据管理</button>
         <button id="refreshBtn" class="refresh" type="button">刷新数据</button>
       </nav>
@@ -123,33 +124,7 @@
             <span>群聊可单独设置普通分级限制和内置安全词。私聊固定使用严格策略。</span>
           </div>
 
-          <section class="panel group-policy-panel" aria-labelledby="groupPolicyTitle">
-            <div class="panel-title">
-              <div>
-                <p>GROUP POLICY</p>
-                <h3 id="groupPolicyTitle">群内容安全策略</h3>
-              </div>
-              <span id="groupPolicyStatus" class="count" aria-live="polite">请选择群</span>
-            </div>
-            <form id="groupPolicyForm" class="group-policy-form">
-              <div class="group-policy-picker">
-                <label for="safetyGroupInput">群 ID</label>
-                <input id="safetyGroupInput" name="safety_group_id" list="safetyGroupOptions" maxlength="128" autocomplete="off" spellcheck="false" placeholder="选择或输入群 ID" required />
-                <datalist id="safetyGroupOptions"></datalist>
-              </div>
-              <label class="policy-toggle" for="generalOnlyToggle">
-                <input id="generalOnlyToggle" type="checkbox" checked />
-                <span><strong>仅普通分级</strong><small>关闭后允许普通与 R18 混合候选，并同步调整上游请求。</small></span>
-              </label>
-              <label class="policy-toggle" for="builtinTermsToggle">
-                <input id="builtinTermsToggle" type="checkbox" checked />
-                <span><strong>启用内置安全词</strong><small>关闭仅跳过内置词；自定义安全词仍全局生效。</small></span>
-              </label>
-              <button id="groupPolicySave" type="submit">保存群策略</button>
-              <p id="groupPolicyError" class="form-error" aria-live="polite"></p>
-            </form>
-            <p class="policy-boundary">未配置群默认两项开启；私聊固定两项开启；自定义安全词与作品 ID 黑名单始终全局生效。</p>
-          </section>
+          <p>群策略已移至独立的“群策略配置”页面。</p>
 
           <div class="policy-strip">
             <div><b>1</b><span>分级限制<strong>按群设置</strong></span></div>
@@ -216,7 +191,14 @@
           </section>
         </section>
 
-        <!-- 数据管理模块 -->
+        <section id="policiesView" class="workspace" aria-labelledby="policiesTitle">
+          <div class="section-heading wide"><p>GROUP POLICY</p><h2 id="policiesTitle">群策略配置</h2><span>持久化管理分群策略；删除后恢复默认严格策略。</span></div>
+          <div class="policies-layout">
+            <section class="panel"><div class="panel-title"><h3>已配置群</h3><button id="policyAddBtn" type="button">添加群</button></div><label for="policySearch">搜索群 ID</label><input id="policySearch" type="search" autocomplete="off"><div id="policyList" aria-live="polite"></div></section>
+            <section class="panel"><div class="panel-title"><h3>策略编辑</h3><span id="policyEditorStatus" aria-live="polite"></span></div><form id="policyEditorForm"><label for="policyGroupId">群 ID</label><input id="policyGroupId" maxlength="128" required readonly><label class="policy-toggle"><input id="policyGeneralToggle" type="checkbox"><span>强制普通分级</span></label><label class="policy-toggle"><input id="policyBuiltinToggle" type="checkbox"><span>启用内置安全词</span></label><p id="policyError" class="form-error" aria-live="polite"></p><button id="policySaveBtn" type="submit">保存修改</button><button id="policyDeleteBtn" class="danger" type="button">删除群</button></form></section>
+          </div>
+          <dialog id="policyAddDialog"><form id="policyAddForm"><h3>添加群策略</h3><label for="policyAddInput">群 ID</label><input id="policyAddInput" maxlength="128" required><p id="policyAddError" class="form-error" aria-live="polite"></p><button value="cancel" type="button" id="policyAddCancel">取消</button><button type="submit">添加</button></form></dialog>
+        </section>        <!-- 数据管理模块 -->
         <section id="dataView" class="workspace" aria-labelledby="dataTitle">
           <div class="section-heading wide">
             <p>DATA OPERATIONS</p>
@@ -328,3 +310,4 @@
     <script type="module" src="./app.js"></script>
   </body>
 </html>
+
