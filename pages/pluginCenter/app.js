@@ -90,7 +90,7 @@ const els = {
   policyList: $("policyList"), policySearch: $("policySearch"), policyAddBtn: $("policyAddBtn"),
   policyAddDialog: $("policyAddDialog"), policyAddForm: $("policyAddForm"), policyAddInput: $("policyAddInput"),
   policyAddCancel: $("policyAddCancel"), policyEditorForm: $("policyEditorForm"), policyGroupId: $("policyGroupId"),
-  policyGeneralToggle: $("policyGeneralToggle"), policyBuiltinToggle: $("policyBuiltinToggle"), policyDeleteBtn: $("policyDeleteBtn"), policyError: $("policyError"), policyEditorStatus: $("policyEditorStatus"),
+  policyGeneralToggle: $("policyGeneralToggle"), policyBuiltinToggle: $("policyBuiltinToggle"), policyDeleteBtn: $("policyDeleteBtn"), policyError: $("policyError"), policyEditorStatus: $("policyEditorStatus"), policySavedAt: $("policySavedAt"),
 };
 
 function escapeHtml(value) {
@@ -587,7 +587,7 @@ function renderPolicyManager() {
   els.policyList.innerHTML = rows.map(p => `<button type="button" class="policy-list-item ${p.group_id === state.selectedPolicyGroupId ? "active" : ""}" data-policy-group="${escapeHtml(p.group_id)}"><strong>${escapeHtml(p.group_id)}</strong><small>${p.general_only_enabled ? "仅普通" : "混合分级"} · ${p.builtin_terms_enabled ? "内置词开" : "内置词关"}</small></button>`).join("") || '<div class="empty">暂无群策略</div>';
   els.policyList.querySelectorAll("[data-policy-group]").forEach(b => b.addEventListener("click", () => selectPolicy(b.dataset.policyGroup)));
   const p = state.groupPolicies.find(x => x.group_id === state.selectedPolicyGroupId);
-  if (p) { els.policyGroupId.value = p.group_id; els.policyGeneralToggle.checked = (state.policyDraft || p).general_only_enabled; els.policyBuiltinToggle.checked = (state.policyDraft || p).builtin_terms_enabled; els.policyEditorStatus.textContent = state.policySavedAt ? `保存于 ${state.policySavedAt}` : "已保存"; els.policyDeleteBtn.disabled = state.policyDeleting; } else { els.policyGroupId.value = ""; els.policyGeneralToggle.checked = true; els.policyBuiltinToggle.checked = true; els.policyEditorStatus.textContent = "请选择群"; els.policyDeleteBtn.disabled = true; }
+  if (p) { els.policyGroupId.value = p.group_id; els.policyGeneralToggle.checked = (state.policyDraft || p).general_only_enabled; els.policyBuiltinToggle.checked = (state.policyDraft || p).builtin_terms_enabled; els.policyEditorStatus.textContent = "已保存"; els.policySavedAt.textContent = p.updated_at || "尚无记录"; els.policyDeleteBtn.disabled = state.policyDeleting; } else { els.policyGroupId.value = ""; els.policyGeneralToggle.checked = true; els.policyBuiltinToggle.checked = true; els.policyEditorStatus.textContent = "请选择群"; els.policyDeleteBtn.disabled = true; }
 }
 
 function selectPolicy(groupId) { state.selectedPolicyGroupId = groupId; const p = state.groupPolicies.find(x => x.group_id === groupId); state.policySnapshot = p ? {...p} : null; state.policyDraft = p ? {...p} : null; renderPolicyManager(); }
@@ -959,6 +959,7 @@ async function start() {
 }
 
 start();
+
 
 
 

@@ -3,6 +3,11 @@ from __future__ import annotations
 import asyncio
 from datetime import datetime, timezone
 from typing import Any
+try:
+    from astrbot.api.all import logger
+except ImportError:
+    import logging
+    logger = logging.getLogger(__name__)
 
 CONFIG_KEY = "group_content_safety_policies"
 MIGRATION_KEY = "group_content_safety_policies_migrated"
@@ -42,10 +47,7 @@ class GroupSafetyService:
     def _install(self, entries):
         self._policies = {str(x["group_id"]): {"group_id": str(x["group_id"]), "general_only_enabled": x["general_only_enabled"], "builtin_terms_enabled": x["builtin_terms_enabled"], "updated_by": "", "updated_at": "", "is_default": False} for x in entries}
     def _log_warnings(self, source, warnings):
-        try:
-            from astrbot.api.all import logger
-            for warning in warnings: logger.warning(f"{self.log_prefix} {source}: {warning}")
-        except Exception: pass
+        for warning in warnings: logger.warning(f"{self.log_prefix} {source}: {warning}")
     def _save_candidate(self, entries, migrated=True):
         old, old_migrated = self.config.get(CONFIG_KEY, []), self.config.get(MIGRATION_KEY, False)
         self.config[CONFIG_KEY], self.config[MIGRATION_KEY] = [dict(x) for x in entries], migrated
