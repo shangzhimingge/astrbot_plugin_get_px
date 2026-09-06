@@ -147,9 +147,15 @@ def test_policy_css_uses_sakura_tokens_and_responsive_actions():
     assert css.count("{") == css.count("}")
     assert '.policy-scope-switch button[aria-pressed="true"]' in css
     assert ".policy-toggle-card" in css and ".policy-badge" in css
+    for selector in ("#policyAddBtn", ".empty-action", "#policyAddSubmit", "#policySaveBtn", "#policyDeleteBtn"):
+        assert selector in css
+    assert "background: var(--primary);" in css
+    assert "background: var(--primary-hover);" in css
+    assert "color: #ffffff;" in css
+    assert 'id="policyDeleteBtn" class="danger"' not in (PAGE_DIR / "index.html").read_text(encoding="utf-8")
     assert "#policySearch,\n#policyGroupId,\n#policyAddInput" in css
     assert "border-radius: var(--radius-sm);" in css
-    assert "#policyAddBtn,\n#policyEditorForm button,\n#policyAddForm button" in css
+    assert "#policyAddBtn,\n#policyAddSubmit,\n#policySaveBtn,\n#policyDeleteBtn" in css
     assert '.policy-toggle-card input[type="checkbox"]' in css
     assert "border-radius: 4px;" in css
     assert ".policy-toggle-card input[type=\"checkbox\"]:focus-visible" in css

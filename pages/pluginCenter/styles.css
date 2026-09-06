@@ -1590,9 +1590,25 @@ dialog p.member-history-note {
 }
 
 #policyAddBtn,
+#policyAddSubmit,
+#policySaveBtn,
+#policyDeleteBtn,
+#policyList .empty-action,
 #policyEditorForm button,
 #policyAddForm button {
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: #ffffff;
+  cursor: pointer;
+}
+
+#policyAddBtn:hover,
+#policyAddSubmit:hover,
+#policySaveBtn:hover,
+#policyDeleteBtn:hover,
+#policyList .empty-action:hover {
+  background: var(--primary-hover);
 }
 
 .policy-toggle-card input[type="checkbox"] {
