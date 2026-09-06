@@ -11,9 +11,9 @@
 | `lolicon_exclude_ai` | `bool` | `true` | 向 Lolicon API 传 excludeAI=true；R18 始终关闭 |
 | `lolicon_image_proxy_origins` | `text` | 空 | 每行一个 http(s) origin，最多 5 个按序尝试；仅改写允许列表内 Pixiv 图片主机 |
 | `max_count` | `int` | `5` | 单次指令最多发送张数，范围 1–20 |
-| `p_coin_cost` | `int` | `20` | `/p` 成功发图每张金币，范围 0–500；0 免费 |
+| `p_coin_cost` | `int` | `20` | `/p` 成功发图每张金币，范围 0–200；0 免费 |
 | `image_quality` | `enum` | `original` | `original`/`large`/`medium`；超阈值自动降级 |
-| `auto_downgrade_original_mb` | `float` | `3.0` | 原图超过此 MiB 时降级，范围 0–100；0 禁用降级 |
+| `auto_downgrade_original_mb` | `float` | `3.0` | 原图超过此 MiB 时降级，范围 0–25；0 禁用降级 |
 | `forward_threshold` | `int` | `1` | 下载张数严格大于此值时合并转发（仅 aiocqhttp）；0 始终合并，范围 0–20 |
 | `auto_trigger_enabled` | `bool` | `false` | 群内自然语言（「来份/张图」）自动触发发图 |
 
@@ -31,9 +31,9 @@
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
 | `checkin_omnidraw_link_enabled` | `bool` | `false` | 联动总开关；开启后才会检测已安装的万象画卷插件，启用商店生图额度、签到发放额度、`/签到状态` 额度展示等全部联动功能 |
-| `checkin_omnidraw_quota_cost` | `int` | `75` | 生图额度每张单价，范围 0–1000；实际花费 = 单价 × 张数 |
+| `checkin_omnidraw_quota_cost` | `int` | `75` | 生图额度每张单价，范围 0–300；实际花费 = 单价 × 张数 |
 | `checkin_omnidraw_quota_default` | `int` | `1` | 不指定张数时默认购买张数，范围 1–50 |
-| `checkin_omnidraw_quota_daily_max` | `int` | `10` | 每人每日购买上限，0 表示不限；签到赠送不受此限 |
+| `checkin_omnidraw_quota_daily_max` | `int` | `10` | 每人每日购买上限，0 表示不限（最大 30）；签到赠送不受此限 |
 
 仅在 `checkin_omnidraw_link_enabled` 开启、且实际安装万象画卷并启用其每日生图限制时生效。购买张数 `签到商店 生图 <张数>`（1–50），额度当日有效，跨天清零。
 
@@ -59,7 +59,7 @@
 
 | 字段 | 类型 | 默认值 | 说明 |
 | --- | --- | --- | --- |
-| `checkin_background_refresh_cost` | `int` | `100` | 签到后刷新背景的金币，范围 0–500；0 免费 |
+| `checkin_background_refresh_cost` | `int` | `100` | 签到后刷新背景的金币，范围 0–300；0 免费 |
 | `checkin_theme_cost` | `int` | `1500` | 非默认签到主题价格，范围 0–5000；默认「米白」始终免费 |
 
 `checkin/themes.py` 的 `price` 仅作读取失败的兜底。主题编号：`00` 米白(免费)、`01` 浅蓝、`02` 红黑、`03` 黄黑、`04`–`07` 四季系列(新柳/荷风/丹枫/寒梅)。`/签到主题 查看|购买|切换 <编号>` 支持编号、ID、中文名。
