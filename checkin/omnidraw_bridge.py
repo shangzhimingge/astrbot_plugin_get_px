@@ -61,7 +61,10 @@ class OmnidrawBridge:
     def _resolve_star(self):
         try:
             meta = self._context.get_registered_star(self._plugin_name)
-        except Exception:
+        except Exception as exc:
+            logger.warning(
+                f"{LOG_PREFIX} 查询万象画卷插件状态失败: error_type={type(exc).__name__}"
+            )
             return None
         if meta is None or not getattr(meta, "activated", False):
             return None
@@ -84,7 +87,10 @@ class OmnidrawBridge:
                 bonus = int(record.get("bonus", 0) or 0)
                 used = int(record.get("count", 0) or 0)
                 reserved = int(star._quota_reservations.get(user_id, 0) or 0)
-        except (AttributeError, TypeError):
+        except Exception as exc:
+            logger.warning(
+                f"{LOG_PREFIX} 万象画卷状态读取失败: error_type={type(exc).__name__}"
+            )
             return self._incompatible()
         blocked_ids = _config_id_set(getattr(config, "blocked_users", ""))
         unlimited_ids = _config_id_set(
