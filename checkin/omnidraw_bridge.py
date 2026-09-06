@@ -169,3 +169,27 @@ class OmnidrawBridge:
             remaining=max(0, limit + bonus - used - reserved),
             message=f"生图额度 +{amount} 张",
         )
+
+    def log_coexistence_hint(self) -> None:
+        status = self.snapshot()
+        if not status.installed:
+            return
+        if not status.compatible:
+            logger.info(
+                f"{LOG_PREFIX} 检测到万象画卷，但版本过旧，签到商店生图额度不可用"
+            )
+            return
+        if not status.daily_limit_enabled:
+            logger.info(
+                f"{LOG_PREFIX} 检测到万象画卷：未启用每日生图限制，"
+                "签到商店不展示生图额度商品，启用后自动展示"
+            )
+            return
+        if status.checkin_enabled:
+            logger.info(
+                f"{LOG_PREFIX} 检测到万象画卷已开启签到领额度(enable_checkin)，"
+                "建议关闭并在万象画卷侧禁用“签到”指令，统一由本插件签到发放金币"
+            )
+        logger.info(
+            f"{LOG_PREFIX} 检测到万象画卷：签到商店已展示生图额度商品"
+        )
