@@ -29,6 +29,7 @@ class OmnidrawStatus:
     checkin_enabled: bool = False
     permission_configured: bool = False
     blocked: bool = False
+    usable: bool = True
     unlimited: bool = False
     granted: bool = False
     bonus: int = 0
@@ -160,6 +161,7 @@ class OmnidrawBridge:
                 (blocked_ids, unlimited_ids, unlimited_groups, usable_ids)
             ),
             blocked=bool(user_id) and user_id in blocked_ids,
+            usable=not usable_ids or (bool(user_id) and user_id in usable_ids),
             unlimited=bool(user_id)
             and (user_id in unlimited_ids or bool(group_id and group_id in unlimited_groups)),
             bonus=bonus,

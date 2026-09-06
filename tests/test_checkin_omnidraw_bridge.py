@@ -157,6 +157,16 @@ def test_snapshot_flags_blocked_and_unlimited_users():
     assert bridge.snapshot().permission_configured
 
 
+def test_snapshot_flags_usable_users_whitelist():
+    star = FakeOmnidraw(usable_users="10003,10004")
+    bridge = OmnidrawBridge(_context_with(star))
+    assert bridge.snapshot("10003").usable
+    assert not bridge.snapshot("10005").usable
+    # 白名单为空时所有人可用
+    empty = FakeOmnidraw()
+    assert OmnidrawBridge(_context_with(empty)).snapshot("10005").usable
+
+
 def test_snapshot_incompatible_version_degrades():
     bridge = OmnidrawBridge(_context_with(_BrokenOmnidraw()))
     status = bridge.snapshot("10001")

@@ -176,6 +176,9 @@ class CheckinShopMixin:
         if status.blocked:
             yield event.plain_result("你已被万象画卷加入黑名单，无法购买生图额度")
             return
+        if not status.usable:
+            yield event.plain_result("你不在万象画卷可使用人员白名单内，无法购买生图额度")
+            return
         if status.unlimited:
             yield event.plain_result("你已是万象画卷不限额用户，无需购买生图额度")
             return

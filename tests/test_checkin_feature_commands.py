@@ -207,10 +207,11 @@ async def test_theme_shop_purchase_and_switch_commands() -> None:
 
 
 class _FakeBridge:
-    def __init__(self, *, available=True, blocked=False, unlimited=False, grant_ok=True):
+    def __init__(self, *, available=True, blocked=False, unlimited=False, usable=True, grant_ok=True):
         self.available_flag = available
         self.blocked = blocked
         self.unlimited = unlimited
+        self.usable = usable
         self.grant_ok = grant_ok
         self.grant_calls = []
 
@@ -219,6 +220,7 @@ class _FakeBridge:
             installed=True,
             daily_limit_enabled=self.available_flag,
             blocked=self.blocked,
+            usable=self.usable,
             unlimited=self.unlimited,
         )
 
@@ -325,6 +327,10 @@ async def test_quota_purchase_precheck_messages() -> None:
         plugin._omnidraw_bridge = _FakeBridge(unlimited=True)
         outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
         assert any("不限额" in str(item) for item in outputs)
+
+        plugin._omnidraw_bridge = _FakeBridge(usable=False)
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
+        assert any("白名单" in str(item) for item in outputs)
 
 
 @pytest.mark.asyncio
