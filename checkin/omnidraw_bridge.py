@@ -32,6 +32,8 @@ class OmnidrawStatus:
     usable: bool = True
     unlimited: bool = False
     granted: bool = False
+    base_limit: int = 0
+    used: int = 0
     bonus: int = 0
     remaining: int = 0
     message: str = ""
@@ -164,6 +166,8 @@ class OmnidrawBridge:
             usable=not usable_ids or (bool(user_id) and user_id in usable_ids),
             unlimited=bool(user_id)
             and (user_id in unlimited_ids or bool(group_id and group_id in unlimited_groups)),
+            base_limit=limit,
+            used=used,
             bonus=bonus,
             remaining=max(0, limit + bonus - used - reserved) if limit > 0 else 0,
         )

@@ -483,11 +483,11 @@ class CheckinCommandMixin:
             return ""
         if status.unlimited:
             return "生图额度: 不限额"
-        return (
-            f"生图额度: 剩余 {status.remaining} 张"
-            f"（已用 {max(0, status.bonus + 0)} 加成"
-            f"{'，当日有效' if status.checkin_enabled else ''}）"
-        )
+        base_left = max(0, status.base_limit - status.used)
+        bonus_left = max(0, status.remaining - base_left)
+        if base_left > 0:
+            return f"生图额度: 基础 {base_left} 张，今日限时 {bonus_left} 张，当日有效"
+        return f"生图额度: 今日额度 {bonus_left} 张，当日有效"
 
     async def _handle_checkin_birthday(
         self, event: AstrMessageEvent, action: str, value: str
