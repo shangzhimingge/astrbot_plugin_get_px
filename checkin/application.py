@@ -183,6 +183,7 @@ class CheckinApplicationMixin:
         card_path: Path | None = None
         claim_held = False
         background_persisted = False
+        background_reselected = False
         profile_snapshot = self._checkin_profile_from_record(record)
         user_title = await self._get_checkin_user_title(record.user_id)
         preferred_tier = (
@@ -259,6 +260,41 @@ class CheckinApplicationMixin:
                             f"{LOG_PREFIX} 签到背景实际质量已同步: "
                             f"quality={restored_quality}"
                         )
+                if background.mode != "pixiv_daily" and (
+                    record.background_mode == "pixiv_daily"
+                ):
+                    # 在线背景恢复失败（作品被删、换图、不符规范等）时重新选一张，
+                    # 而不是直接发内置占位图；custom 背景恢复失败保持占位行为。
+                    stage = "background_reselect"
+                    logger.info(
+                        f"{LOG_PREFIX} 签到背景恢复失败，重新选择在线背景: "
+                        f"illust_id={record.background_illust_id} "
+                        f"restored_mode={background.mode}"
+                    )
+                    reselected = await self._prepare_checkin_background(
+                        event,
+                        record,
+                        render_tier=preferred_tier,
+                    )
+                    if reselected is not None and reselected.mode == "pixiv_daily":
+                        background = reselected
+                        background_reselected = True
+                        # mode 已由重选分支保证为 pixiv_daily，仅查占用与 illust_id。
+                        claim_held = bool(
+                            background.illust_id
+                            and self._checkin_background_claims_enabled()
+                        )
+                        logger.info(
+                            f"{LOG_PREFIX} 签到背景重选完成: "
+                            f"illust_id={background.illust_id} "
+                            f"source={background.source.partition(':')[0] or 'unknown'} "
+                            f"quality={background.quality}"
+                        )
+                    else:
+                        logger.debug(
+                            f"{LOG_PREFIX} 签到背景重选失败，使用占位图: "
+                            f"reselected_mode={getattr(reselected, 'mode', 'none')}"
+                        )
             if cached_path is None:
                 stage = "card_render"
                 cached_path, actual_tier = await self._render_checkin_card_with_fallback(
@@ -272,7 +308,9 @@ class CheckinApplicationMixin:
                     cache=cache,
                 )
 
-            if not result.duplicate and background is not None:
+            if (
+                not result.duplicate or background_reselected
+            ) and background is not None:
                 stage = "background_persist"
                 await self.checkin_store.update_record_background(
                     user_id=user_id,
