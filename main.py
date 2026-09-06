@@ -684,7 +684,74 @@ class GetPxPlugin(
 
     # ──────────────────────────────────────────────────────────────
     # 配置读取（带类型校验）
+    # ponytail: schema 改 object 分组后存盘为嵌套，_cfg_get 先遍历分组取值、
+    # 找不到再回退扁平 key（兼容旧扁平配置 / 测试用的扁平 dict）。
     # ──────────────────────────────────────────────────────────────
+
+    _CONFIG_GROUP_KEYS = (
+        "pixiv_source",
+        "content_dedupe",
+        "checkin_omnidraw",
+        "checkin_basic",
+        "checkin_shop",
+        "runtime",
+    )
+
+    def _cfg_get(self, key: str, default=None):
+        config = getattr(self, "config", None)
+        if config is None:
+            return default
+        for group_key in self._CONFIG_GROUP_KEYS:
+            try:
+                group = config.get(group_key)
+            except Exception:
+                group = None
+            if group is None:
+                continue
+            try:
+                if key in group:
+                    return group[key]
+            except Exception:
+                pass
+        try:
+            return config.get(key, default)
+        except Exception:
+            return default
+
+    def _cfg_contains(self, key: str) -> bool:
+        config = getattr(self, "config", None)
+        if config is None:
+            return False
+        for group_key in self._CONFIG_GROUP_KEYS:
+            try:
+                group = config.get(group_key)
+            except Exception:
+                group = None
+            if group is None:
+                continue
+            try:
+                if key in group:
+                    return True
+            except Exception:
+                pass
+        try:
+            return key in config
+        except Exception:
+            return False
+
+    def _cfg_set(self, key: str, value) -> None:
+        config = getattr(self, "config", None)
+        if config is None:
+            return
+        for group_key in self._CONFIG_GROUP_KEYS:
+            try:
+                group = config.get(group_key)
+            except Exception:
+                group = None
+            if isinstance(group, dict) and key in group:
+                group[key] = value
+                return
+        config[key] = value
 
     def _migrate_dedupe_config(self) -> int:
         config = getattr(self, "config", None)
@@ -692,8 +759,8 @@ class GetPxPlugin(
             return 1
         if not self._cfg_bool("dedupe_days_migrated", False):
             legacy_value = self._cfg_float("dedupe_ttl_hours", 24.0, 0.0, 24.0)
-            config["dedupe_days"] = 0 if legacy_value <= 0 else 1
-            config["dedupe_days_migrated"] = True
+            self._cfg_set("dedupe_days", 0 if legacy_value <= 0 else 1)
+            self._cfg_set("dedupe_days_migrated", True)
             persisted = False
             save_config = getattr(config, "save_config", None)
             if callable(save_config):
@@ -708,16 +775,17 @@ class GetPxPlugin(
             logger.info(
                 f"{LOG_PREFIX} 已迁移旧去重配置: "
                 f"dedupe_ttl_hours={legacy_value:g} -> "
-                f"dedupe_days={config['dedupe_days']}, persisted={persisted}"
+                f"dedupe_days={self._cfg_int('dedupe_days', 1, 0, 7)}, "
+                f"persisted={persisted}"
             )
         return self._cfg_int("dedupe_days", 1, 0, 7)
 
     def _cfg_str(self, key: str, default: str = "") -> str:
-        val = self.config.get(key, default)
+        val = self._cfg_get(key, default)
         return str(val).strip() if val is not None else default
 
     def _cfg_int(self, key: str, default: int, lo: int, hi: int) -> int:
-        raw = self.config.get(key, default)
+        raw = self._cfg_get(key, default)
         if isinstance(raw, (bool, float)):
             return default
         try:
@@ -728,19 +796,19 @@ class GetPxPlugin(
 
     def _forward_threshold(self) -> int:
         """Return the merged-forward threshold, accepting the retired bool setting."""
-        if "forward_threshold" in self.config:
+        if self._cfg_contains("forward_threshold"):
             return self._cfg_int("forward_threshold", 1, 0, MAX_IMAGE_COUNT)
         return 0 if self._cfg_bool("send_as_forward", True) else MAX_IMAGE_COUNT
 
     def _cfg_float(self, key: str, default: float, lo: float, hi: float) -> float:
         try:
-            val = float(self.config.get(key, default))
+            val = float(self._cfg_get(key, default))
         except (TypeError, ValueError):
             return default
         return val if lo <= val <= hi else default
 
     def _cfg_bool(self, key: str, default: bool) -> bool:
-        val = self.config.get(key, default)
+        val = self._cfg_get(key, default)
         if isinstance(val, bool):
             return val
         if isinstance(val, str):

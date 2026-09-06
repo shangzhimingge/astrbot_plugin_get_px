@@ -173,6 +173,8 @@ AstrBot WebUI 插件页的「pluginCenter」可：
 <details>
 <summary>完整配置项</summary>
 
+WebUI 配置页按以下 6 组折叠展示，分组细节与维护规则见 [docs/project/configuration.md](docs/project/configuration.md)：Pixiv 图源与下载、图片筛选与去重、万象画卷联动、签到基础、签到商店与定价、运行参数。
+
 | 配置 | 说明 | 默认值 |
 | --- | --- | --- |
 | `pixiv_refresh_token` | Pixiv refresh_token，可选回退 | 空 |

@@ -589,7 +589,7 @@ class CheckinApplicationMixin:
             return await self.checkin_greeting.generate_hitokoto(
                 content.context,
                 timeout=self._cfg_float("checkin_hitokoto_timeout", 5.0, 1.0, 15.0),
-                categories=self.config.get("checkin_hitokoto_categories", ["全部"]),
+                categories=self._cfg_get("checkin_hitokoto_categories", ["全部"]),
             )
         greeting, source = await self.checkin_greeting.generate(
             event,
@@ -627,7 +627,7 @@ class CheckinApplicationMixin:
             ) = await self.checkin_greeting.generate_hitokoto(
                 content.context,
                 timeout=self._cfg_float("checkin_hitokoto_timeout", 5.0, 1.0, 15.0),
-                categories=self.config.get("checkin_hitokoto_categories", ["全部"]),
+                categories=self._cfg_get("checkin_hitokoto_categories", ["全部"]),
             )
             if source != "hitokoto" or not greeting:
                 return record
