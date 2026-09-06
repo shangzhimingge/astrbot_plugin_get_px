@@ -136,22 +136,26 @@ class CheckinShopMixin:
             return None
         if not bridge.snapshot().available:
             return None
-        pack = self._cfg_int("checkin_omnidraw_quota_pack", 5, 1, 50)
-        cost = self._cfg_int("checkin_omnidraw_quota_cost", 150, 0, 10000)
+        unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 1000)
         return CheckinShopItem(
             item_id="omnidraw:quota",
             category="omnidraw",
-            command="签到商店 生图",
-            name=f"生图额度 ×{pack}",
-            price=cost,
+            command="签到商店 生图 <张数>",
+            name="生图额度（每张）",
+            price=unit_price,
         )
 
-    async def _handle_buy_checkin_quota(self, event: AstrMessageEvent):
+    async def _handle_buy_checkin_quota(self, event: AstrMessageEvent, count: str = ""):
         if not self._cfg_bool("checkin_enabled", True):
             yield event.plain_result("签到功能已关闭")
             return
         if self.checkin_store is None:
             yield event.plain_result("签到数据尚未初始化，请稍后再试")
+            return
+        if not count or not count.isdigit() or not (1 <= int(count) <= 50):
+            yield event.plain_result(
+                "用法: 签到商店 生图 <张数>\n示例: 签到商店 生图 5\n张数范围 1-50"
+            )
             return
         bridge = getattr(self, "_omnidraw_bridge", None)
         if bridge is None:
@@ -171,14 +175,15 @@ class CheckinShopMixin:
         if status.unlimited:
             yield event.plain_result("你已是万象画卷不限额用户，无需购买生图额度")
             return
-        pack = self._cfg_int("checkin_omnidraw_quota_pack", 5, 1, 50)
-        cost = self._cfg_int("checkin_omnidraw_quota_cost", 150, 0, 10000)
+        amount = int(count)
+        unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 1000)
+        cost = unit_price * amount
         spend = await self.checkin_store.spend_coins(user_id=user_id, cost=cost)
         if not spend.success:
             yield event.plain_result(spend.message)
             return
         granted = await bridge.grant(
-            user_id, pack, display_name=str(event.get_sender_name() or "")
+            user_id, amount, display_name=str(event.get_sender_name() or "")
         )
         if not granted.granted:
             if cost > 0:

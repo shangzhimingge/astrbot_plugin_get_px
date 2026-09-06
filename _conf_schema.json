@@ -170,26 +170,15 @@
     "hint": "用户购买任意非默认签到主题所需金币。设为 0 表示免费；默认“米白”主题始终免费。"
   },
   "checkin_omnidraw_quota_cost": {
-    "description": "生图额度价格",
+    "description": "生图额度单价",
     "type": "int",
-    "default": 150,
+    "default": 75,
     "slider": {
       "min": 0,
-      "max": 10000,
-      "step": 10
+      "max": 1000,
+      "step": 5
     },
-    "hint": "用户在签到商店购买一次生图额度所需金币，仅在同时安装万象画卷且其启用每日生图限制时可用。设为 0 表示免费。"
-  },
-  "checkin_omnidraw_quota_pack": {
-    "description": "生图额度张数",
-    "type": "int",
-    "default": 5,
-    "slider": {
-      "min": 1,
-      "max": 50,
-      "step": 1
-    },
-    "hint": "每次购买到账的生图张数，计入万象画卷当日生图额度，跨天清零。"
+    "hint": "用户在签到商店购买生图额度时每张的价格；实际花费 = 单价 × 张数。仅在同时安装万象画卷且其启用每日生图限制时可用。设为 0 表示免费。"
   },
   "checkin_background_tag": {
     "description": "签到背景标签",

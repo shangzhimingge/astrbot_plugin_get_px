@@ -249,12 +249,11 @@ async def test_quota_product_shown_when_bridge_available() -> None:
         plugin = make_plugin(tmp)
         plugin.config = {
             "checkin_enabled": True,
-            "checkin_omnidraw_quota_cost": 150,
-            "checkin_omnidraw_quota_pack": 5,
+            "checkin_omnidraw_quota_cost": 75,
         }
         plugin._omnidraw_bridge = _FakeBridge()
         shop = plugin._build_checkin_shop()
-        assert "签到商店 生图 - 生图额度 ×5，150 金币" in shop
+        assert "签到商店 生图 <张数> - 生图额度（每张），75 金币" in shop
 
 
 @pytest.mark.asyncio
@@ -276,19 +275,19 @@ async def test_quota_purchase_success_then_refund_on_grant_failure() -> None:
         await plugin.checkin_store.checkin(
             user_id="10001", username="测试用户", bot_name="neko"
         )
-        set_user_coins(plugin, 200)
+        set_user_coins(plugin, 400)
 
-        outputs = [item async for item in plugin._handle_buy_checkin_quota(event)]
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "5")]
         assert any("生图额度 +5 张" in str(item) for item in outputs)
         assert any("今日剩余生图额度: 25 张" in str(item) for item in outputs)
-        assert (await plugin.checkin_store.get_profile("10001")).coins == 50
+        assert (await plugin.checkin_store.get_profile("10001")).coins == 25
         assert plugin._omnidraw_bridge.grant_calls == [("10001", 5)]
 
-        set_user_coins(plugin, 200)
+        set_user_coins(plugin, 400)
         plugin._omnidraw_bridge.grant_ok = False
-        outputs = [item async for item in plugin._handle_buy_checkin_quota(event)]
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "5")]
         assert any("已退回" in str(item) for item in outputs)
-        assert (await plugin.checkin_store.get_profile("10001")).coins == 200
+        assert (await plugin.checkin_store.get_profile("10001")).coins == 400
 
 
 @pytest.mark.asyncio
@@ -303,7 +302,7 @@ async def test_quota_purchase_insufficient_coins() -> None:
         )
         set_user_coins(plugin, 10)
 
-        outputs = [item async for item in plugin._handle_buy_checkin_quota(event)]
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "5")]
         assert any("金币不足" in str(item) for item in outputs)
         assert plugin._omnidraw_bridge.grant_calls == []
 
@@ -316,15 +315,15 @@ async def test_quota_purchase_precheck_messages() -> None:
         event = FakeEvent()
 
         plugin._omnidraw_bridge = _FakeBridge(available=False)
-        outputs = [item async for item in plugin._handle_buy_checkin_quota(event)]
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
         assert any("未启用每日生图限制" in str(item) for item in outputs)
 
         plugin._omnidraw_bridge = _FakeBridge(blocked=True)
-        outputs = [item async for item in plugin._handle_buy_checkin_quota(event)]
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
         assert any("黑名单" in str(item) for item in outputs)
 
         plugin._omnidraw_bridge = _FakeBridge(unlimited=True)
-        outputs = [item async for item in plugin._handle_buy_checkin_quota(event)]
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
         assert any("不限额" in str(item) for item in outputs)
 
 
@@ -340,7 +339,7 @@ async def test_quota_purchase_free_cost_grant_failure_does_not_refund() -> None:
         )
         set_user_coins(plugin, 200)
 
-        outputs = [item async for item in plugin._handle_buy_checkin_quota(event)]
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
         assert any("发放失败" in str(item) for item in outputs)
         assert not any("退回" in str(item) for item in outputs)
         assert (await plugin.checkin_store.get_profile("10001")).coins == 200

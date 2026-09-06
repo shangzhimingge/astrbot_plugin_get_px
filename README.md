@@ -192,8 +192,7 @@ AstrBot WebUI 插件页的「pluginCenter」可：
 | `checkin_background_mode` | 签到背景模式：`pixiv_daily` 或 `custom`；自定义背景不可用时继续尝试在线图片源 | `pixiv_daily` |
 | `checkin_background_refresh_cost` | 用户更新当天在线背景所需金币；范围 `0–500`，`0` 为免费 | `100` |
 | `checkin_theme_cost` | 非默认签到主题的统一价格；范围 `0–5000`，`0` 为免费 | `1500` |
-| `checkin_omnidraw_quota_cost` | 签到商店购买一次生图额度的价格；范围 `0–10000`，`0` 为免费；仅在安装万象画卷且其启用每日生图限制时可用 | `150` |
-| `checkin_omnidraw_quota_pack` | 每次购买到账的生图张数；范围 `1–50`，计入万象画卷当日额度，跨天清零 | `5` |
+| `checkin_omnidraw_quota_cost` | 签到商店购买生图额度的单张价格；范围 `0–1000`，`0` 为免费；购买时指定张数，实际花费 = 单价 × 张数 | `75` |
 | `checkin_background_tag` | 签到背景标签；留空时 Lolicon 随机取图，失败后使用 Pixiv 推荐作品 | 空 |
 | `checkin_custom_background` | 本地图片路径；默认主题按竖向作品相框完整显示 | 空 |
 | `checkin_avatar_enabled` | 签到卡片显示用户头像 | `true` |

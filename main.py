@@ -498,10 +498,10 @@ class GetPxPlugin(
             yield result
 
     @checkin_shop.command("生图")
-    async def cmd_buy_checkin_quota(self, event: AstrMessageEvent):
+    async def cmd_buy_checkin_quota(self, event: AstrMessageEvent, count: str = ""):
         """购买万象画卷生图额度。"""
         event.stop_event()
-        async for result in self._handle_buy_checkin_quota(event):
+        async for result in self._handle_buy_checkin_quota(event, count):
             yield result
 
     @filter.command_group("签到主题")
