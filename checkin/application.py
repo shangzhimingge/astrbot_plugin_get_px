@@ -462,7 +462,7 @@ class CheckinApplicationMixin:
         )
         if not granted.granted:
             return ""
-        return f"{granted.message}（当日有效，剩余 {granted.remaining} 张）"
+        return f"\n{granted.message}（当日有效，剩余 {granted.remaining} 张）"
 
     async def _prepare_checkin_record_content(
         self,
