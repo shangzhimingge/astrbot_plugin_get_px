@@ -1570,6 +1570,41 @@ dialog p.member-history-note {
   gap: 6px;
 }
 
+#policySearch,
+#policyGroupId,
+#policyAddInput {
+  width: 100%;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text);
+  padding: 10px 14px;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+#policySearch:focus,
+#policyAddInput:focus {
+  border-color: var(--border-focus);
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
+#policyAddBtn,
+#policyEditorForm button,
+#policyAddForm button {
+  border-radius: var(--radius-sm);
+}
+
+.policy-toggle-card input[type="checkbox"] {
+  border-radius: 4px;
+}
+
+.policy-toggle-card input[type="checkbox"]:focus-visible {
+  outline: 3px solid var(--border-focus);
+  outline-offset: 2px;
+  box-shadow: 0 0 0 3px var(--primary-soft);
+}
+
 .policy-badge {
   display: inline-flex;
   padding: 3px 8px;

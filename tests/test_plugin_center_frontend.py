@@ -65,6 +65,12 @@ def test_plugin_center_exposes_independent_group_safety_switches() -> None:
     assert 'id="policyAddTitle"' in html and 'id="policyAddLabel"' in html
     assert 'import * as policyState from "./policy-state.mjs"' in source
 
+def test_policy_add_error_is_bound_before_add_handlers_use_it() -> None:
+    source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
+    mapping = source[source.index("const els = {"):source.index("};", source.index("const els = {"))]
+    assert 'policyAddError: $("policyAddError")' in mapping
+    assert source.index('policyAddError: $("policyAddError")') < source.index("els.policyAddError.textContent")
+
 def _function_body(source, name):
     start = source.index(f"function {name}")
     depth = 0
@@ -141,6 +147,12 @@ def test_policy_css_uses_sakura_tokens_and_responsive_actions():
     assert css.count("{") == css.count("}")
     assert '.policy-scope-switch button[aria-pressed="true"]' in css
     assert ".policy-toggle-card" in css and ".policy-badge" in css
+    assert "#policySearch,\n#policyGroupId,\n#policyAddInput" in css
+    assert "border-radius: var(--radius-sm);" in css
+    assert "#policyAddBtn,\n#policyEditorForm button,\n#policyAddForm button" in css
+    assert '.policy-toggle-card input[type="checkbox"]' in css
+    assert "border-radius: 4px;" in css
+    assert ".policy-toggle-card input[type=\"checkbox\"]:focus-visible" in css
     assert "@media (max-width: 900px)" in css
     mobile = css[css.rindex("@media (max-width: 620px)"):]
     assert "#policySaveBtn" in mobile and "#policyDeleteBtn" in mobile

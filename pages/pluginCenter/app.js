@@ -89,7 +89,7 @@ const els = {
   blacklistError: $("blacklistError"),
   policyList: $("policyList"), policySearch: $("policySearch"), policyAddBtn: $("policyAddBtn"),
   policyAddDialog: $("policyAddDialog"), policyAddForm: $("policyAddForm"), policyAddInput: $("policyAddInput"),
-  policyAddCancel: $("policyAddCancel"), policyEditorForm: $("policyEditorForm"), policyGroupId: $("policyGroupId"),
+  policyAddCancel: $("policyAddCancel"), policyAddError: $("policyAddError"), policyEditorForm: $("policyEditorForm"), policyGroupId: $("policyGroupId"),
   policyGeneralToggle: $("policyGeneralToggle"), policyBuiltinToggle: $("policyBuiltinToggle"), policySaveBtn: $("policySaveBtn"), policyDeleteBtn: $("policyDeleteBtn"), policyAddSubmit: $("policyAddSubmit"), policyError: $("policyError"), policyEditorStatus: $("policyEditorStatus"), policySavedAt: $("policySavedAt"),
   policyGroupScopeBtn: $("policyGroupScopeBtn"), policyPrivateScopeBtn: $("policyPrivateScopeBtn"),
   policyCount: $("policyCount"), policyEditorEmpty: $("policyEditorEmpty"),
