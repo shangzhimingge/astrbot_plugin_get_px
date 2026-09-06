@@ -1601,6 +1601,10 @@ dialog p.member-history-note {
   background: var(--primary);
   color: #ffffff;
   cursor: pointer;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1.2;
+  padding: 9px 15px;
 }
 
 #policyAddBtn:hover,

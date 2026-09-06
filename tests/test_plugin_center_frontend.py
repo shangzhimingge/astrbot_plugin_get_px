@@ -152,6 +152,10 @@ def test_policy_css_uses_sakura_tokens_and_responsive_actions():
     assert "background: var(--primary);" in css
     assert "background: var(--primary-hover);" in css
     assert "color: #ffffff;" in css
+    assert "font-size: 14px;" in css
+    assert "font-weight: 700;" in css
+    assert "line-height: 1.2;" in css
+    assert "padding: 9px 15px;" in css
     assert 'id="policyDeleteBtn" class="danger"' not in (PAGE_DIR / "index.html").read_text(encoding="utf-8")
     assert "#policySearch,\n#policyGroupId,\n#policyAddInput" in css
     assert "border-radius: var(--radius-sm);" in css
