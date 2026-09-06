@@ -49,6 +49,7 @@ from .checkin.cache import CheckinCardCache
 from .checkin.commands import CheckinCommandMixin
 from .checkin.greeting import CheckinGreetingGenerator
 from .checkin.holiday import HolidayCalendar
+from .checkin.omnidraw_bridge import OmnidrawBridge
 from .checkin.shop import CheckinShopMixin
 from .pixiv import DeliveryMixin, FiltersMixin, SearchMixin
 from .pixiv.client import PixivClient
@@ -480,6 +481,13 @@ class GetPxPlugin(
         """购买好感度双倍加持。"""
         event.stop_event()
         async for result in self._handle_buy_checkin_boost(event, days):
+            yield result
+
+    @checkin_shop.command("生图")
+    async def cmd_buy_checkin_quota(self, event: AstrMessageEvent):
+        """购买万象画卷生图额度。"""
+        event.stop_event()
+        async for result in self._handle_buy_checkin_quota(event):
             yield result
 
     @filter.command_group("签到主题")
