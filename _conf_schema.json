@@ -357,6 +357,12 @@
         },
         "hint": "同一用户两次请求的最小间隔，设为 0 禁用。防止刷屏。"
       },
+      "_grouped_config_migrated": {
+        "description": "分组配置迁移标记",
+        "type": "bool",
+        "default": false,
+        "invisible": true
+      },
       "webui_font_source": {
         "description": "WebUI 字体来源",
         "type": "string",

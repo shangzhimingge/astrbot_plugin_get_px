@@ -139,6 +139,7 @@ class GetPxPlugin(
         """插件加载时初始化 Pixiv 客户端。"""
         data_dir = StarTools.get_data_dir(PLUGIN_NAME)
         self.data_dir = Path(data_dir)
+        self._migrate_grouped_config()
         dedupe_days = self._migrate_dedupe_config()
         self._init_client()
         # SQLite DDL/迁移是同步操作，放入线程池避免阻塞事件循环
@@ -697,6 +698,48 @@ class GetPxPlugin(
         "runtime",
     )
 
+    # 扁平 key -> 分组。用于把旧扁平配置迁移到 object 嵌套结构，
+    # 让 WebUI 配置页能读到用户已配的值（WebUI 按 schema 结构读，不走 _cfg_get 兑底）。
+    _CONFIG_KEY_TO_GROUP = {
+        "pixiv_refresh_token": "pixiv_source",
+        "lolicon_api_url": "pixiv_source",
+        "lolicon_exclude_ai": "pixiv_source",
+        "lolicon_image_proxy_origins": "pixiv_source",
+        "max_count": "pixiv_source",
+        "p_coin_cost": "pixiv_source",
+        "image_quality": "pixiv_source",
+        "auto_downgrade_original_mb": "pixiv_source",
+        "forward_threshold": "pixiv_source",
+        "auto_trigger_enabled": "pixiv_source",
+        "filter_manga": "content_dedupe",
+        "dedupe_days": "content_dedupe",
+        "dedupe_ttl_hours": "content_dedupe",
+        "dedupe_days_migrated": "content_dedupe",
+        "checkin_omnidraw_link_enabled": "checkin_omnidraw",
+        "checkin_omnidraw_quota_cost": "checkin_omnidraw",
+        "checkin_omnidraw_quota_default": "checkin_omnidraw",
+        "checkin_omnidraw_quota_daily_max": "checkin_omnidraw",
+        "checkin_enabled": "checkin_basic",
+        "checkin_bot_name": "checkin_basic",
+        "checkin_card_quality_tier": "checkin_basic",
+        "checkin_avatar_enabled": "checkin_basic",
+        "checkin_greeting_mode": "checkin_basic",
+        "checkin_hitokoto_categories": "checkin_basic",
+        "checkin_ai_greeting_provider_id": "checkin_basic",
+        "checkin_ai_greeting_prompt": "checkin_basic",
+        "checkin_ai_greeting_timeout": "checkin_basic",
+        "checkin_hitokoto_timeout": "checkin_basic",
+        "checkin_background_mode": "checkin_basic",
+        "checkin_background_tag": "checkin_basic",
+        "checkin_custom_background": "checkin_basic",
+        "checkin_background_refresh_cost": "checkin_shop",
+        "checkin_theme_cost": "checkin_shop",
+        "request_timeout": "runtime",
+        "rate_limit_seconds": "runtime",
+        "webui_font_source": "runtime",
+        "_grouped_config_migrated": "runtime",
+    }
+
     def _cfg_get(self, key: str, default=None):
         config = getattr(self, "config", None)
         if config is None:
@@ -752,6 +795,51 @@ class GetPxPlugin(
                 group[key] = value
                 return
         config[key] = value
+
+    def _migrate_grouped_config(self) -> None:
+        """把旧扁平配置值搬到 object 分组嵌套结构，避免 WebUI 配置页显示为空。
+
+        WebUI 按 schema 结构读 config[组][键]，旧扁平值不在组里会被显示为默认值，
+        保存后还可能被 AstrBot 当成“schema 不存在”的键清理掉。这里把扁平值搬进
+        对应组，留 _grouped_config_migrated 标志避免重复搬。"""
+        config = getattr(self, "config", None)
+        if config is None:
+            return
+        if self._cfg_bool("_grouped_config_migrated", False):
+            return
+        moved = []
+        for key, group_key in self._CONFIG_KEY_TO_GROUP.items():
+            if key == "_grouped_config_migrated":
+                continue
+            try:
+                flat_val = config.get(key, None)
+            except Exception:
+                flat_val = None
+            if flat_val is None:
+                continue
+            group = config.get(group_key)
+            if not isinstance(group, dict):
+                group = {}
+                config[group_key] = group
+            # 扁平值优先，覆盖组里已有的 schema 默认值
+            group[key] = flat_val
+            moved.append(key)
+        config["_grouped_config_migrated"] = True
+        save_config = getattr(config, "save_config", None)
+        persisted = False
+        if callable(save_config):
+            try:
+                save_config()
+                persisted = True
+            except Exception as exc:
+                logger.warning(
+                    f"{LOG_PREFIX} 分组配置迁移保存失败: "
+                    f"error_type={type(exc).__name__}"
+                )
+        logger.info(
+            f"{LOG_PREFIX} 已迁移扁平配置到分组: "
+            f"count={len(moved)} persisted={persisted}"
+        )
 
     def _migrate_dedupe_config(self) -> int:
         config = getattr(self, "config", None)
