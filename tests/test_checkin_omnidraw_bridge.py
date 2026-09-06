@@ -48,6 +48,15 @@ class FakeOmnidraw:
         self.persist_calls += 1
 
 
+class _DeployedOmnidraw(FakeOmnidraw):
+    """模拟部署版 v3.3.23：_usage_lock/_daily_image_limit/_normalize_usage_stats/
+    _usage_stats/_persist_usage_stats 都在，但没有 _quota_reservations。"""
+
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+        del self._quota_reservations
+
+
 class _BrokenOmnidraw:
     """缺少桥所依赖的私有成员，模拟版本过旧。"""
 
@@ -261,4 +270,24 @@ async def test_grant_logs_missing_member_on_attribute_error(monkeypatch):
     assert not status.granted
     assert any("_normalize_usage_stats" in m and "reason=" in m for m in captured)
     assert any("私有成员" in m for m in captured)
+
+
+def test_snapshot_without_quota_reservations_attribute():
+    """部署版 v3.3.23 没有 _quota_reservations，getattr 兜底为空字典。"""
+    star = _DeployedOmnidraw(enable_checkin=True)
+    star._usage_stats["users"]["10001"] = {"count": 6, "bonus": 3, "checkin_at": 1}
+    bridge = OmnidrawBridge(_context_with(star))
+    status = bridge.snapshot("10001")
+    assert status.installed and status.available
+    assert status.remaining == 20 + 3 - 6  # reserved=0
+
+
+@pytest.mark.asyncio
+async def test_grant_without_quota_reservations_attribute():
+    star = _DeployedOmnidraw()
+    bridge = OmnidrawBridge(_context_with(star))
+    status = await bridge.grant("10001", 5)
+    assert status.granted
+    assert status.message == "生图额度 +5 张"
+    assert star.persist_calls == 1
 

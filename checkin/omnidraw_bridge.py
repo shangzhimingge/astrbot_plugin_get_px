@@ -50,7 +50,8 @@ class OmnidrawBridge:
     """读取万象画卷额度状态并发放加成。
 
     ponytail: 直接依赖对方私有成员（_usage_lock/_usage_stats/_persist_usage_stats/
-    _daily_image_limit），VPS 部署版 v3.3.23 实测可用；对方升级重命名时
+    _daily_image_limit），部署版 v3.3.23 实测可用；_quota_reservations 在
+    部署版中不存在，用 getattr 兜底为空字典。对方升级重命名时
     AttributeError 会被降级为"不可用"，届时再 fork 补公开方法。
     """
 
@@ -136,7 +137,7 @@ class OmnidrawBridge:
                 record = stats.get("users", {}).get(user_id, {})
                 bonus = int(record.get("bonus", 0) or 0)
                 used = int(record.get("count", 0) or 0)
-                reserved = int(star._quota_reservations.get(user_id, 0) or 0)
+                reserved = int(getattr(star, "_quota_reservations", {}).get(user_id, 0) or 0)
         except Exception as exc:
             logger.warning(
                 f"{LOG_PREFIX} 万象画卷状态读取失败: "
@@ -211,7 +212,7 @@ class OmnidrawBridge:
             star._persist_usage_stats()
             bonus = int(record["bonus"])
             used = int(record.get("count", 0) or 0)
-            reserved = int(star._quota_reservations.get(user_id, 0) or 0)
+            reserved = int(getattr(star, "_quota_reservations", {}).get(user_id, 0) or 0)
         logger.info(
             f"{LOG_PREFIX} 生图额度发放完成: "
             f"user_id={user_id} amount={amount} bonus={bonus}"
