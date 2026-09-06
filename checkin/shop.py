@@ -181,15 +181,24 @@ class CheckinShopMixin:
             user_id, pack, display_name=str(event.get_sender_name() or "")
         )
         if not granted.granted:
-            refund = await self.checkin_store.add_coins(user_id=user_id, amount=cost)
-            logger.warning(
-                f"{LOG_PREFIX} 生图额度发放失败，金币已退回: "
-                f"user_id={user_id} cost={cost} reason={granted.message or 'unknown'}"
-            )
-            yield event.plain_result(
-                f"生图额度发放失败（{granted.message or '未知原因'}），"
-                f"{refund.cost} 金币已退回，当前金币 {refund.profile.coins}。"
-            )
+            if cost > 0:
+                refund = await self.checkin_store.add_coins(user_id=user_id, amount=cost)
+                logger.warning(
+                    f"{LOG_PREFIX} 生图额度发放失败，金币已退回: "
+                    f"user_id={user_id} cost={cost} reason={granted.message or 'unknown'}"
+                )
+                yield event.plain_result(
+                    f"生图额度发放失败（{granted.message or '未知原因'}），"
+                    f"{refund.cost} 金币已退回，当前金币 {refund.profile.coins}。"
+                )
+            else:
+                logger.warning(
+                    f"{LOG_PREFIX} 生图额度发放失败: "
+                    f"user_id={user_id} cost={cost} reason={granted.message or 'unknown'}"
+                )
+                yield event.plain_result(
+                    f"生图额度发放失败（{granted.message or '未知原因'}）。"
+                )
             return
         yield event.plain_result(
             f"{granted.message}\n"

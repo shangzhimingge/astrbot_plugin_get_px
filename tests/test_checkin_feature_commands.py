@@ -329,6 +329,24 @@ async def test_quota_purchase_precheck_messages() -> None:
 
 
 @pytest.mark.asyncio
+async def test_quota_purchase_free_cost_grant_failure_does_not_refund() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        plugin.config = {"checkin_enabled": True, "checkin_omnidraw_quota_cost": 0}
+        plugin._omnidraw_bridge = _FakeBridge(grant_ok=False)
+        event = FakeEvent()
+        await plugin.checkin_store.checkin(
+            user_id="10001", username="测试用户", bot_name="neko"
+        )
+        set_user_coins(plugin, 200)
+
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event)]
+        assert any("发放失败" in str(item) for item in outputs)
+        assert not any("退回" in str(item) for item in outputs)
+        assert (await plugin.checkin_store.get_profile("10001")).coins == 200
+
+
+@pytest.mark.asyncio
 async def test_free_configured_theme_is_unlocked_without_deducting_coins() -> None:
     with tempfile.TemporaryDirectory() as tmp:
         plugin = make_plugin(tmp)
