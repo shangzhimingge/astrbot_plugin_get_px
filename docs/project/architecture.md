@@ -47,7 +47,7 @@ plugin_api/
 
 `checkin/shop.py` 中的 `build_checkin_shop_items()` 是商品展示目录的统一注册点，每个商品拥有稳定 `item_id`、分类、指令、名称和价格。新增商品时先在目录中注册展示项，再在 `CheckinShopMixin` 增加购买处理，并将需要原子扣款的数据操作放入 `CheckinStore` 对应 store 模块；入口层只保留 AstrBot 指令装饰器。商品目录和购买行为应分别补充测试。
 
-万象画卷生图额度（`item_id="omnidraw:quota"`）是首个条件商品：仅当 `plugin._omnidraw_bridge`（`checkin/omnidraw_bridge.py`）可用且快照 `available` 时注入目录；购买流程先经 `spend_coins` 扣款，再调用 bridge `grant` 发放，发放失败时用 `add_coins` 原路退回。
+万象画卷生图额度（`item_id="omnidraw:quota"`）是首个条件商品：仅在总开关 `checkin_omnidraw_link_enabled` 开启且 `plugin._omnidraw_bridge`（`checkin/omnidraw_bridge.py`，initialize 中按开关创建）可用、快照 `available` 时注入目录；购买流程先经 `spend_coins` 扣款，再调用 bridge `grant` 发放，发放失败时用 `add_coins` 原路退回。
 
 ## 签到卡主题模板
 

@@ -169,6 +169,12 @@
     },
     "hint": "用户购买任意非默认签到主题所需金币。设为 0 表示免费；默认“米白”主题始终免费。"
   },
+  "checkin_omnidraw_link_enabled": {
+    "description": "启用万象画卷联动",
+    "type": "bool",
+    "default": false,
+    "hint": "总开关，默认关闭。开启后才会检测已安装的万象画卷插件，并启用签到商店出售生图额度、签到时发放额度、/签到状态 展示额度等所有联动功能。未开启时所有万象画卷联动一律不生效。"
+  },
   "checkin_omnidraw_quota_cost": {
     "description": "生图额度单价",
     "type": "int",

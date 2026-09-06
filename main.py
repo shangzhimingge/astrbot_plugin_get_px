@@ -166,9 +166,10 @@ class GetPxPlugin(
         )
         self.checkin_cache = CheckinCardCache(self.data_dir / "checkin_card_cache")
         self._omnidraw_hint_logged = False
-        self._omnidraw_bridge = OmnidrawBridge(self.context)
-        self._omnidraw_bridge.log_coexistence_hint()
-        self._omnidraw_hint_logged = True
+        if self._cfg_bool("checkin_omnidraw_link_enabled", False):
+            self._omnidraw_bridge = OmnidrawBridge(self.context)
+            self._omnidraw_bridge.log_coexistence_hint()
+            self._omnidraw_hint_logged = True
         await asyncio.to_thread(self.checkin_cache.cleanup_expired, force=True)
         self.holiday_calendar = HolidayCalendar(
             self.data_dir,
