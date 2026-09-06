@@ -291,3 +291,45 @@ async def test_grant_without_quota_reservations_attribute():
     assert status.message == "生图额度 +5 张"
     assert star.persist_calls == 1
 
+
+@pytest.mark.asyncio
+async def test_grant_daily_checkin_bonus_adds_bonus_and_sets_checkin_at():
+    star = FakeOmnidraw(enable_checkin=True)
+    bridge = OmnidrawBridge(_context_with(star))
+    status = await bridge.grant_daily_checkin_bonus("10001", display_name="测试")
+    assert status.granted
+    assert "+" in status.message and "张" in status.message
+    record = star._usage_stats["users"]["10001"]
+    assert record["checkin_at"] > 0
+    assert record["bonus"] >= 1
+    assert record["display_name"] == "测试"
+    assert star.persist_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_grant_daily_checkin_bonus_is_idempotent():
+    star = FakeOmnidraw(enable_checkin=True)
+    bridge = OmnidrawBridge(_context_with(star))
+    first = await bridge.grant_daily_checkin_bonus("10001")
+    second = await bridge.grant_daily_checkin_bonus("10001")
+    assert first.granted
+    assert not second.granted
+    assert "未重复发放" in second.message
+    assert star.persist_calls == 1  # 第二次不落盘
+
+
+@pytest.mark.asyncio
+async def test_grant_daily_checkin_bonus_rejects_when_limit_disabled():
+    star = FakeOmnidraw(enable_daily_limit=False, enable_checkin=True)
+    bridge = OmnidrawBridge(_context_with(star))
+    status = await bridge.grant_daily_checkin_bonus("10001")
+    assert not status.granted
+    assert star.persist_calls == 0
+
+
+@pytest.mark.asyncio
+async def test_grant_daily_checkin_bonus_without_plugin_fails():
+    bridge = OmnidrawBridge(SimpleNamespace(get_registered_star=lambda name: None))
+    status = await bridge.grant_daily_checkin_bonus("10001")
+    assert not status.granted
+

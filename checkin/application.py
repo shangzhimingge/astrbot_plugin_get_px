@@ -341,6 +341,12 @@ class CheckinApplicationMixin:
                 content = [Image.fromFileSystem(str(card_path))]
                 if background and background.pixiv_caption:
                     content.append(Plain(background.pixiv_caption))
+                if not result.duplicate:
+                    quota_line = await self._grant_checkin_omnidraw_quota(
+                        event, user_id
+                    )
+                    if quota_line:
+                        content.append(Plain(quota_line))
                 stage = "card_send"
                 await event.send(event.chain_result(content))
                 # 图片发送成功后不再释放 pending；即使升级正式记录失败，也要继续去重。
@@ -429,6 +435,34 @@ class CheckinApplicationMixin:
                             f"mode=pixiv_daily"
                         )
         yield event.plain_result(self._format_checkin_plain_text(result))
+
+    async def _grant_checkin_omnidraw_quota(
+        self, event: AstrMessageEvent, user_id: str
+    ) -> str:
+        """首签成功后顺便给万象画卷发当日生图额度（替代被 stop_event 屏蔽的对方 /签到）。
+
+        失败时静默返回空串，不阻断签到主流程。
+        """
+        bridge = getattr(self, "_omnidraw_bridge", None)
+        if bridge is None:
+            return ""
+        try:
+            status = bridge.snapshot(user_id, str(event.get_group_id() or ""))
+        except Exception as exc:
+            logger.warning(
+                f"{LOG_PREFIX} 签到联动额度预检失败: "
+                f"user_id={user_id} error_type={type(exc).__name__}"
+            )
+            return ""
+        if not status.available or not status.checkin_enabled:
+            return ""
+        display_name = str(event.get_sender_name() or "")
+        granted = await bridge.grant_daily_checkin_bonus(
+            user_id, display_name=display_name
+        )
+        if not granted.granted:
+            return ""
+        return f"{granted.message}（当日有效，剩余 {granted.remaining} 张）"
 
     async def _prepare_checkin_record_content(
         self,

@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import asyncio
+import random
 import re
+import time
 from dataclasses import dataclass
 
 from astrbot.api import logger
@@ -226,13 +228,99 @@ class OmnidrawBridge:
             message=f"生图额度 +{amount} 张",
         )
 
+    async def grant_daily_checkin_bonus(
+        self, user_id: str, *, display_name: str = ""
+    ) -> OmnidrawStatus:
+        """签到联动：复刻万象画卷 /签到 的额度发放（随机区间 + checkin_at 幂等）。
+
+        与 shop.grant 的区别：写 checkin_at（与对方 /签到 双向幂等）、
+        随机区间来自对方 checkin_bonus_min/max、不改 checkin_at=0 的语义。
+        """
+        star = self._resolve_star()
+        if star is None:
+            return OmnidrawStatus(message="未检测到万象画卷插件")
+        try:
+            return await asyncio.to_thread(
+                self._grant_checkin_sync, star, user_id, display_name
+            )
+        except (AttributeError, TypeError) as exc:
+            logger.warning(
+                f"{LOG_PREFIX} 签到联动额度发放失败(私有成员): "
+                f"user_id={user_id} reason={exc}"
+            )
+            return self._incompatible(exc)
+        except Exception as exc:
+            logger.warning(
+                f"{LOG_PREFIX} 签到联动额度发放失败: "
+                f"user_id={user_id} error_type={type(exc).__name__} reason={exc}"
+            )
+            return OmnidrawStatus(message="发放失败，请稍后再试")
+
+    def _grant_checkin_sync(
+        self, star, user_id: str, display_name: str
+    ) -> OmnidrawStatus:
+        limit = int(star._daily_image_limit() or 0)
+        if limit <= 0:
+            return OmnidrawStatus(
+                installed=True, message="万象画卷未启用每日生图限制"
+            )
+        config = getattr(star, "plugin_config", None)
+        bonus_min = int(getattr(config, "checkin_bonus_min", 1) or 1)
+        bonus_max = int(getattr(config, "checkin_bonus_max", 3) or 3)
+        if bonus_max < bonus_min:
+            bonus_max = bonus_min
+        gained = (
+            random.randint(bonus_min, bonus_max) if bonus_max > bonus_min else bonus_min
+        )
+        reservations = getattr(star, "_quota_reservations", {})
+        with star._usage_lock:
+            stats = star._normalize_usage_stats(star._usage_stats)
+            star._usage_stats = stats
+            users = stats.setdefault("users", {})
+            record = users.setdefault(user_id, dict(_EMPTY_RECORD))
+            if int(record.get("checkin_at", 0) or 0) > 0:
+                bonus = int(record.get("bonus", 0) or 0)
+                used = int(record.get("count", 0) or 0)
+                reserved = int(reservations.get(user_id, 0) or 0)
+                return OmnidrawStatus(
+                    installed=True,
+                    daily_limit_enabled=True,
+                    bonus=bonus,
+                    remaining=max(0, limit + bonus - used - reserved),
+                    message="今日已签到，生图额度未重复发放",
+                )
+            record["user_id"] = user_id
+            record["bonus"] = int(record.get("bonus", 0) or 0) + gained
+            record["checkin_at"] = int(time.time())
+            if display_name:
+                record["display_name"] = display_name
+            stats["total"] = sum(
+                int(item.get("count", 0) or 0) for item in users.values()
+            )
+            star._persist_usage_stats()
+            bonus = int(record["bonus"])
+            used = int(record.get("count", 0) or 0)
+            reserved = int(reservations.get(user_id, 0) or 0)
+        logger.info(
+            f"{LOG_PREFIX} 签到联动额度发放完成: "
+            f"user_id={user_id} gained={gained} bonus={bonus}"
+        )
+        return OmnidrawStatus(
+            installed=True,
+            daily_limit_enabled=True,
+            granted=True,
+            bonus=gained,
+            remaining=max(0, limit + bonus - used - reserved),
+            message=f"生图额度 +{gained} 张",
+        )
+
     def log_coexistence_hint(self) -> None:
         status = self.snapshot()
         if not status.installed:
             return
         if not status.compatible:
             logger.info(
-                f"{LOG_PREFIX} 检测到万象画卷，但版本过旧，签到商店生图额度不可用"
+                f"{LOG_PREFIX} 检测到万象画卷，但版本过旧，生图额度功能不可用"
             )
             return
         if not status.daily_limit_enabled:
@@ -243,9 +331,11 @@ class OmnidrawBridge:
             return
         if status.checkin_enabled:
             logger.info(
-                f"{LOG_PREFIX} 检测到万象画卷已开启签到领额度(enable_checkin)，"
-                "建议关闭并在万象画卷侧禁用“签到”指令，统一由本插件签到发放金币"
+                f"{LOG_PREFIX} 检测到万象画卷已开启签到领额度，"
+                "本插件 /签到 将自动发放金币与生图额度"
+                "（万象画卷的 /签到 已被 stop_event 屏蔽，无需手动禁用）"
             )
-        logger.info(
-            f"{LOG_PREFIX} 检测到万象画卷：签到商店已展示生图额度商品"
-        )
+        else:
+            logger.info(
+                f"{LOG_PREFIX} 检测到万象画卷：签到商店已展示生图额度商品"
+            )
