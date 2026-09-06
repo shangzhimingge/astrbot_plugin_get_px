@@ -58,20 +58,70 @@ class OmnidrawBridge:
         self._context = context
         self._plugin_name = plugin_name
 
+    def _probe_star(self, star) -> bool:
+        """轻量探测：实例是否挂齐桥所依赖的私有成员（_usage_lock 是 __init__ 设的实例属性，
+        能区分热重载残留 / 半初始化的失效实例）。不触锁、无副作用。"""
+        return star is not None and hasattr(star, "_usage_lock") and callable(
+            getattr(star, "_daily_image_limit", None)
+        )
+
+    def _identity_matches(self, metadata) -> bool:
+        name = self._plugin_name
+        module_path = str(getattr(metadata, "module_path", "") or "")
+        return (
+            getattr(metadata, "name", None) == name
+            or getattr(metadata, "root_dir_name", None) == name
+            or module_path.endswith(name)
+        )
+
     def _resolve_star(self):
         try:
             meta = self._context.get_registered_star(self._plugin_name)
         except Exception as exc:
             logger.warning(
-                f"{LOG_PREFIX} 查询万象画卷插件状态失败: error_type={type(exc).__name__}"
+                f"{LOG_PREFIX} 查询万象画卷插件状态失败: "
+                f"error_type={type(exc).__name__} reason={exc}"
             )
             return None
-        if meta is None or not getattr(meta, "activated", False):
-            return None
-        return getattr(meta, "star_cls", None)
+        primary = (
+            getattr(meta, "star_cls", None)
+            if meta is not None and getattr(meta, "activated", False)
+            else None
+        )
+        if self._probe_star(primary):
+            return primary
+        # get_registered_star 可能命中热重载残留的失效实例，扫实时注册表找通过探测的实例。
+        get_all = getattr(self._context, "get_all_stars", None)
+        if callable(get_all):
+            try:
+                stars = list(get_all() or [])
+            except Exception as exc:
+                logger.warning(
+                    f"{LOG_PREFIX} 枚举万象画卷插件列表失败: "
+                    f"error_type={type(exc).__name__} reason={exc}"
+                )
+                stars = []
+            seen: set[int] = {id(primary)} if primary is not None else set()
+            for metadata in stars[:10]:
+                if not getattr(metadata, "activated", False):
+                    continue
+                if not self._identity_matches(metadata):
+                    continue
+                star = getattr(metadata, "star_cls", None)
+                if id(star) in seen:
+                    continue
+                seen.add(id(star))
+                if self._probe_star(star):
+                    return star
+        # 扫不到可用的就原样返回主实例（可能为 None 或失效实例），
+        # 由 snapshot/grant 的 try/except 决定降级语义（未安装 vs 不兼容）。
+        return primary
 
-    def _incompatible(self) -> OmnidrawStatus:
-        logger.info(f"{LOG_PREFIX} 万象画卷版本过旧，生图额度功能不可用")
+    def _incompatible(self, exc: BaseException | None = None) -> OmnidrawStatus:
+        reason = f" reason={exc}" if exc is not None else ""
+        logger.info(
+            f"{LOG_PREFIX} 万象画卷版本过旧或不兼容，生图额度功能不可用{reason}"
+        )
         return OmnidrawStatus(installed=True, compatible=False)
 
     def snapshot(self, user_id: str = "", group_id: str = "") -> OmnidrawStatus:
@@ -89,9 +139,10 @@ class OmnidrawBridge:
                 reserved = int(star._quota_reservations.get(user_id, 0) or 0)
         except Exception as exc:
             logger.warning(
-                f"{LOG_PREFIX} 万象画卷状态读取失败: error_type={type(exc).__name__}"
+                f"{LOG_PREFIX} 万象画卷状态读取失败: "
+                f"error_type={type(exc).__name__} reason={exc}"
             )
-            return self._incompatible()
+            return self._incompatible(exc)
         blocked_ids = _config_id_set(getattr(config, "blocked_users", ""))
         unlimited_ids = _config_id_set(
             getattr(config, "unlimited_users", "")
@@ -124,12 +175,16 @@ class OmnidrawBridge:
             return await asyncio.to_thread(
                 self._grant_sync, star, user_id, amount, display_name
             )
-        except (AttributeError, TypeError):
-            return self._incompatible()
+        except (AttributeError, TypeError) as exc:
+            logger.warning(
+                f"{LOG_PREFIX} 生图额度发放失败(私有成员): "
+                f"user_id={user_id} reason={exc}"
+            )
+            return self._incompatible(exc)
         except Exception as exc:
             logger.warning(
                 f"{LOG_PREFIX} 生图额度发放失败: "
-                f"user_id={user_id} error_type={type(exc).__name__}"
+                f"user_id={user_id} error_type={type(exc).__name__} reason={exc}"
             )
             return OmnidrawStatus(message="发放失败，请稍后再试")
 

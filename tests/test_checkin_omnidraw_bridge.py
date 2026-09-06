@@ -63,6 +63,48 @@ def _context_with(star, *, activated=True):
     )
 
 
+def _meta(star, *, name="astrbot_plugin_omnidraw", activated=True):
+    return SimpleNamespace(
+        name=name,
+        activated=activated,
+        star_cls=star,
+        root_dir_name=name,
+        module_path=f"data.plugins.{name}",
+    )
+
+
+def _ctx(*, registered=None, all_stars=()):
+    return SimpleNamespace(
+        get_registered_star=lambda name: registered
+        if name == "astrbot_plugin_omnidraw"
+        else None,
+        get_all_stars=lambda: list(all_stars),
+    )
+
+
+class _ProbePassGrantFails:
+    """探测过（_usage_lock + _daily_image_limit 在）但 _grant_sync 访问
+    _normalize_usage_stats 时抛 AttributeError，用于锁定发放失败的日志路径。"""
+
+    def __init__(self):
+        self.plugin_config = SimpleNamespace(
+            enable_daily_limit=True,
+            daily_image_limit=20,
+            enable_checkin=False,
+            blocked_users="",
+            unlimited_users="",
+            allowed_users="",
+            unlimited_groups="",
+            usable_users="",
+        )
+        self._usage_lock = threading.RLock()
+        self._usage_stats = {"date": "2026-09-06", "total": 0, "users": {}}
+        self._quota_reservations = {}
+
+    def _daily_image_limit(self):
+        return 20
+
+
 def test_snapshot_without_plugin_reports_not_installed():
     bridge = OmnidrawBridge(SimpleNamespace(get_registered_star=lambda name: None))
     status = bridge.snapshot("10001")
@@ -166,3 +208,57 @@ async def test_grant_swallows_unexpected_error():
     status = await bridge.grant("10001", 5)
     assert not status.granted
     assert status.message == "发放失败，请稍后再试"
+
+
+def test_resolve_prefers_probe_passing_instance():
+    bad = _BrokenOmnidraw()  # 缺 _usage_lock → 探测不过
+    good = FakeOmnidraw()
+    bridge = OmnidrawBridge(
+        _ctx(registered=_meta(bad), all_stars=(_meta(good),))
+    )
+    status = bridge.snapshot("10001")
+    assert status.installed and status.available
+    assert status.remaining == 20  # 用的是 good 实例
+
+
+def test_resolve_skips_wrong_name_metadata():
+    bad = _BrokenOmnidraw()
+    good = FakeOmnidraw()
+    bridge = OmnidrawBridge(
+        _ctx(
+            registered=_meta(bad),
+            all_stars=(_meta(good, name="astrbot_plugin_other"),),
+        )
+    )
+    status = bridge.snapshot("10001")
+    # 身份不匹配的好实例被跳过 → 回退坏实例 → 不兼容（而非误用 good）
+    assert status.installed and not status.compatible
+
+
+def test_all_candidates_bad_reports_incompatible():
+    bad = _BrokenOmnidraw()
+    bridge = OmnidrawBridge(
+        _ctx(registered=_meta(bad), all_stars=(_meta(bad),))
+    )
+    status = bridge.snapshot("10001")
+    assert status.installed and not status.compatible  # 已注册但实例失效 → 不兼容
+
+
+@pytest.mark.asyncio
+async def test_grant_logs_missing_member_on_attribute_error(monkeypatch):
+    captured = []
+    spy = SimpleNamespace(
+        warning=lambda msg, *a, **k: captured.append(msg),
+        info=lambda msg, *a, **k: captured.append(msg),
+        debug=lambda msg, *a, **k: captured.append(msg),
+    )
+    monkeypatch.setattr("checkin.omnidraw_bridge.logger", spy)
+    star = _ProbePassGrantFails()
+    bridge = OmnidrawBridge(
+        _ctx(registered=_meta(star), all_stars=(_meta(star),))
+    )
+    status = await bridge.grant("10001", 5)
+    assert not status.granted
+    assert any("_normalize_usage_stats" in m and "reason=" in m for m in captured)
+    assert any("私有成员" in m for m in captured)
+

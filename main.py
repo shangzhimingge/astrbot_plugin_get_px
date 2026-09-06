@@ -165,8 +165,10 @@ class GetPxPlugin(
             f"version={PLUGIN_VERSION}, path={self.checkin_store._db_path}"
         )
         self.checkin_cache = CheckinCardCache(self.data_dir / "checkin_card_cache")
+        self._omnidraw_hint_logged = False
         self._omnidraw_bridge = OmnidrawBridge(self.context)
         self._omnidraw_bridge.log_coexistence_hint()
+        self._omnidraw_hint_logged = True
         await asyncio.to_thread(self.checkin_cache.cleanup_expired, force=True)
         self.holiday_calendar = HolidayCalendar(
             self.data_dir,
@@ -233,6 +235,16 @@ class GetPxPlugin(
 
     async def _web_checkin_import(self):
         return await self._web_api().checkin_import()
+
+    @filter.on_plugin_loaded()
+    async def on_plugin_loaded(self, metadata) -> None:
+        """插件按字母序加载，本插件早于万象画卷初始化；待其加载完成后再补一次共存提示。"""
+        if getattr(metadata, "name", "") != "astrbot_plugin_omnidraw":
+            return
+        bridge = getattr(self, "_omnidraw_bridge", None)
+        if bridge is None:
+            return
+        await asyncio.to_thread(bridge.log_coexistence_hint)
 
     async def terminate(self):
         """插件卸载/停用时清理资源，并让并发调用等待同一清理任务。"""
