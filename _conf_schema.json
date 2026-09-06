@@ -180,6 +180,28 @@
     },
     "hint": "用户在签到商店购买生图额度时每张的价格；实际花费 = 单价 × 张数。仅在同时安装万象画卷且其启用每日生图限制时可用。设为 0 表示免费。"
   },
+  "checkin_omnidraw_quota_default": {
+    "description": "生图额度默认购买张数",
+    "type": "int",
+    "default": 1,
+    "slider": {
+      "min": 1,
+      "max": 50,
+      "step": 1
+    },
+    "hint": "用户使用“签到商店 生图”不指定张数时默认购买的张数。"
+  },
+  "checkin_omnidraw_quota_daily_max": {
+    "description": "生图额度每日购买上限",
+    "type": "int",
+    "default": 10,
+    "slider": {
+      "min": 0,
+      "max": 100,
+      "step": 1
+    },
+    "hint": "每人每日通过签到商店最多可购买的生图额度总张数；设为 0 表示不限。签到赠送的额度不受此限制。"
+  },
   "checkin_background_tag": {
     "description": "签到背景标签",
     "type": "string",

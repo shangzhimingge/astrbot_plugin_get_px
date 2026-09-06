@@ -140,7 +140,7 @@ class CheckinShopMixin:
         return CheckinShopItem(
             item_id="omnidraw:quota",
             category="omnidraw",
-            command="签到商店 生图 <张数>",
+            command="签到商店 生图 [张数]",
             name="生图额度（每张）",
             price=unit_price,
         )
@@ -152,9 +152,13 @@ class CheckinShopMixin:
         if self.checkin_store is None:
             yield event.plain_result("签到数据尚未初始化，请稍后再试")
             return
-        if not count or not count.isdigit() or not (1 <= int(count) <= 50):
+        if not count:
+            amount = self._cfg_int("checkin_omnidraw_quota_default", 1, 1, 50)
+        elif count.isdigit() and 1 <= int(count) <= 50:
+            amount = int(count)
+        else:
             yield event.plain_result(
-                "用法: 签到商店 生图 <张数>\n示例: 签到商店 生图 5\n张数范围 1-50"
+                "用法: 签到商店 生图 [张数]\n示例: 签到商店 生图 5\n张数范围 1-50"
             )
             return
         bridge = getattr(self, "_omnidraw_bridge", None)
@@ -175,7 +179,18 @@ class CheckinShopMixin:
         if status.unlimited:
             yield event.plain_result("你已是万象画卷不限额用户，无需购买生图额度")
             return
-        amount = int(count)
+        daily_max = self._cfg_int("checkin_omnidraw_quota_daily_max", 10, 0, 100)
+        today = self.checkin_store.today_key()
+        if daily_max > 0:
+            purchased = await self.checkin_store.get_omnidraw_quota_purchased(
+                user_id=user_id, date_key=today
+            )
+            if purchased + amount > daily_max:
+                yield event.plain_result(
+                    f"今日生图额度购买上限 {daily_max} 张，"
+                    f"你已购买 {purchased} 张，剩余 {daily_max - purchased} 张可购。"
+                )
+                return
         unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 1000)
         cost = unit_price * amount
         spend = await self.checkin_store.spend_coins(user_id=user_id, cost=cost)
@@ -205,6 +220,9 @@ class CheckinShopMixin:
                     f"生图额度发放失败（{granted.message or '未知原因'}）。"
                 )
             return
+        await self.checkin_store.add_omnidraw_quota_purchase(
+            user_id=user_id, date_key=today, amount=amount
+        )
         yield event.plain_result(
             f"{granted.message}\n"
             f"当前金币: {spend.profile.coins}\n"

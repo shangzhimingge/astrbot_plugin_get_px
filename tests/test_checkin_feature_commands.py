@@ -253,7 +253,7 @@ async def test_quota_product_shown_when_bridge_available() -> None:
         }
         plugin._omnidraw_bridge = _FakeBridge()
         shop = plugin._build_checkin_shop()
-        assert "签到商店 生图 <张数> - 生图额度（每张），75 金币" in shop
+        assert "签到商店 生图 [张数] - 生图额度（每张），75 金币" in shop
 
 
 @pytest.mark.asyncio
