@@ -136,7 +136,7 @@ class CheckinShopMixin:
             return None
         if not bridge.snapshot().available:
             return None
-        unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 1000)
+        unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 300)
         return CheckinShopItem(
             item_id="omnidraw:quota",
             category="omnidraw",
@@ -182,7 +182,7 @@ class CheckinShopMixin:
         if status.unlimited:
             yield event.plain_result("你已是万象画卷不限额用户，无需购买生图额度")
             return
-        daily_max = self._cfg_int("checkin_omnidraw_quota_daily_max", 10, 0, 100)
+        daily_max = self._cfg_int("checkin_omnidraw_quota_daily_max", 10, 0, 30)
         today = self.checkin_store.today_key()
         if daily_max > 0:
             purchased = await self.checkin_store.get_omnidraw_quota_purchased(
@@ -194,7 +194,7 @@ class CheckinShopMixin:
                     f"你已购买 {purchased} 张，剩余 {daily_max - purchased} 张可购。"
                 )
                 return
-        unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 1000)
+        unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 300)
         cost = unit_price * amount
         spend = await self.checkin_store.spend_coins(user_id=user_id, cost=cost)
         if not spend.success:
@@ -233,7 +233,7 @@ class CheckinShopMixin:
         )
 
     def _build_checkin_shop(self) -> str:
-        refresh_cost = self._cfg_int("checkin_background_refresh_cost", 100, 0, 500)
+        refresh_cost = self._cfg_int("checkin_background_refresh_cost", 100, 0, 300)
         theme_cost = self._cfg_int("checkin_theme_cost", 1500, 0, 5000)
         lines = [
             "签到商店",
@@ -388,7 +388,7 @@ class CheckinShopMixin:
         if record is None:
             yield event.plain_result("请先完成今天的签到，再更新背景")
             return
-        cost = self._cfg_int("checkin_background_refresh_cost", 100, 0, 500)
+        cost = self._cfg_int("checkin_background_refresh_cost", 100, 0, 300)
         profile = await self.checkin_store.get_profile(user_id)
         if profile.coins < cost:
             yield event.plain_result(

@@ -824,7 +824,7 @@ class GetPxPlugin(
             # 扁平值优先，覆盖组里已有的 schema 默认值
             group[key] = flat_val
             moved.append(key)
-        config["_grouped_config_migrated"] = True
+        self._cfg_set("_grouped_config_migrated", True)
         save_config = getattr(config, "save_config", None)
         persisted = False
         if callable(save_config):
