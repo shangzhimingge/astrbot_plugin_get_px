@@ -11,7 +11,6 @@
 - 签到商店结算底层新增通用 `add_coins` 金币入账方法，用于购买发放失败时的原路退款。
 
 ### 变更
-- `checkin_omnidraw_quota_cost` 从打包价（默认 150/5 张）改为单张价（默认 75/张）；`checkin_omnidraw_quota_pack` 配置项已移除，购买张数改由指令参数指定。已有配置文件中残留的旧值需手动更新为单张价。
 - 配置 schema 从扁平结构改为 6 个 object 分组（Pixiv 图源、图片去重、万象联动、签到基础、签到商店、运行参数）。WebUI 配置页按分组折叠展示。`main.py` 配置读取层先遍历分组取值、找不到再回退扁平 key。
 - schema 顶层保留 37 个 `invisible` 旧扁平键作为过渡兼容。AstrBot 4.27+ 加载插件配置时会删除 schema 之外的键，这些 invisible 键让旧扁平值在框架裁剪前存活，`_migrate_grouped_config` 随后搬到对应分组。迁移完成后下一版本将删除这些顶层键。
 - 收紧 5 项定价/阈值配置的 slider 上限，代码侧读取范围同步对齐：`p_coin_cost` 500→200、`auto_downgrade_original_mb` 100→25、`checkin_omnidraw_quota_cost` 1000→300、`checkin_omnidraw_quota_daily_max` 100→30、`checkin_background_refresh_cost` 500→300。

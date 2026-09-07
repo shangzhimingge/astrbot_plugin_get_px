@@ -61,6 +61,7 @@
 | 图片来源 | Lolicon 为首选；`pixiv_refresh_token` 可选，仅作回退 |
 | 内容安全 | 强制普通分级、内置安全词（不可关）、自定义安全词、作品 ID 黑名单 |
 | 每日签到 | H 纸张画册卡片、竖向随机背景、金币、好感度、连签、商店与主题 |
+| 万象联动 | 可选接入万象画卷，签到领生图额度、商店购买额度，总开关默认关闭 |
 | 管理中心 | 群排行与趋势、成员数值、安全词与黑名单、签到备份 |
 | 稳定性 | 0–7 个自然日去重、发送失败重试、临时文件自动清理 |
 
@@ -157,6 +158,18 @@ AstrBot WebUI 插件页的「pluginCenter」可：
 - 商店：加持 200/500/1000；背景刷新默认 100（可配）；非默认主题默认每套 1500（可配）。默认「米白」免费。
 
 细则（好感等级、卡片规格、问候 24/32 字、生日事件、称号、节假日等）见 [签到说明](docs/user/checkin.md)。
+
+## 万象画卷联动
+
+本插件可选接入 [万象画卷](https://github.com/diaomin66/astrbot_plugin_omnidraw/)（`astrbot_plugin_omnidraw`），用签到金币体系购买和管理每日生图额度。总开关 `checkin_omnidraw_link_enabled` 默认关闭，开启后才会检测对方插件并激活全部联动功能。
+
+- **签到领额度**：`/签到` 时自动为万象画卷当日生图额度增加随机 1–3 张（读取对方 `checkin_bonus_min/max` 配置），与对方 `/签到` 双向幂等，本插件 `stop_event` 自动屏蔽对方同名指令，无需手动禁用。
+- **商店购买**：`签到商店 生图 [张数]` 按张定价（`checkin_omnidraw_quota_cost`），受每日购买上限（`checkin_omnidraw_quota_daily_max`）约束，发放失败自动退回金币。
+- **状态展示**：`/签到状态` 展示剩余/已用/加成额度，桥不可用时不显示。
+- **额度有效期**：当日有效，万象画卷跨天时自动清零，不结转。
+- **前置条件**：需同时安装万象画卷并启用其每日生图限制；对方版本过旧或私有成员不兼容时自动降级为"不可用"，不影响签到本身。
+
+> 联动通过读取万象画卷运行时实例的私有成员实现，无公开 API 契约。对方升级改了内部结构时联动会静默降级，届时需适配。
 
 ## 推荐配置
 
@@ -273,4 +286,6 @@ lunar-python
 - 签到每日一言由 [Hitokoto API](https://github.com/hitokoto-osc/hitokoto-api) 提供，感谢一言开源社区和公共 API 服务
 - 签到卡片内置字体由 [霞鹜文楷轻便版](https://github.com/lxgw/LxgwWenKai-Lite) 生成，采用 SIL Open Font License 1.1 授权
 - 每日签到设计参考 [zhenxun_bot](https://github.com/zhenxun-org/zhenxun_bot)
+- 万象画卷联动接入 [astrbot_plugin_omnidraw](https://github.com/diaomin66/astrbot_plugin_omnidraw/)（作者 雪碧bir），生图额度由对方插件管理
+- 跨插件联动桥接模式参考 [astrbot_plugin_private_companion](https://github.com/menglimi/astrbot_plugin_private_companion)（作者 menglimi），感谢其私有成员探测与降级策略的设计启发
 - [PeeGayhub Telegram 表情包系列](https://t.me/addstickers/PeeGayhub)：插件图标借鉴了该系列表情包风格；图标素材由 GPT 生成。

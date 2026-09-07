@@ -145,7 +145,9 @@ class CheckinShopMixin:
             price=unit_price,
         )
 
-    async def _handle_buy_checkin_quota(self, event: AstrMessageEvent, count: str = ""):
+    async def _handle_buy_checkin_quota(
+        self, event: AstrMessageEvent, count: str = "", *, _flow_locked: bool = False
+    ):
         if not self._cfg_bool("checkin_enabled", True):
             yield event.plain_result("签到功能已关闭")
             return
@@ -168,6 +170,18 @@ class CheckinShopMixin:
         user_id = str(event.get_sender_id() or "")
         if not user_id:
             yield event.plain_result("无法识别用户 ID，暂时不能购买生图额度")
+            return
+        if not _flow_locked:
+            lock = self._checkin_flow_lock(user_id)
+            async with lock:
+                outputs = [
+                    item
+                    async for item in self._handle_buy_checkin_quota(
+                        event, count, _flow_locked=True
+                    )
+                ]
+            for output in outputs:
+                yield output
             return
         status = bridge.snapshot(user_id, str(event.get_group_id() or ""))
         if not status.available:
@@ -205,15 +219,28 @@ class CheckinShopMixin:
         )
         if not granted.granted:
             if cost > 0:
-                refund = await self.checkin_store.add_coins(user_id=user_id, amount=cost)
-                logger.warning(
-                    f"{LOG_PREFIX} 生图额度发放失败，金币已退回: "
-                    f"user_id={user_id} cost={cost} reason={granted.message or 'unknown'}"
-                )
-                yield event.plain_result(
-                    f"生图额度发放失败（{granted.message or '未知原因'}），"
-                    f"{refund.cost} 金币已退回，当前金币 {refund.profile.coins}。"
-                )
+                try:
+                    refund = await self.checkin_store.add_coins(
+                        user_id=user_id, amount=cost
+                    )
+                    logger.warning(
+                        f"{LOG_PREFIX} 生图额度发放失败，金币已退回: "
+                        f"user_id={user_id} cost={cost} reason={granted.message or 'unknown'}"
+                    )
+                    yield event.plain_result(
+                        f"生图额度发放失败（{granted.message or '未知原因'}），"
+                        f"{refund.cost} 金币已退回，当前金币 {refund.profile.coins}。"
+                    )
+                except Exception as exc:
+                    logger.error(
+                        f"{LOG_PREFIX} 生图额度发放失败且退款异常: "
+                        f"user_id={user_id} cost={cost} "
+                        f"error_type={type(exc).__name__} reason={exc}"
+                    )
+                    yield event.plain_result(
+                        f"生图额度发放失败（{granted.message or '未知原因'}），"
+                        f"金币退款异常，请联系管理员核对（需退 {cost} 金币）。"
+                    )
             else:
                 logger.warning(
                     f"{LOG_PREFIX} 生图额度发放失败: "

@@ -315,7 +315,7 @@ class OmnidrawBridge:
             installed=True,
             daily_limit_enabled=True,
             granted=True,
-            bonus=gained,
+            bonus=bonus,
             remaining=max(0, limit + bonus - used - reserved),
             message=f"生图额度 +{gained} 张",
         )
