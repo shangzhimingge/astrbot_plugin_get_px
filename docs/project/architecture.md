@@ -47,6 +47,8 @@ plugin_api/
 
 `checkin/shop.py` 中的 `build_checkin_shop_items()` 是商品展示目录的统一注册点，每个商品拥有稳定 `item_id`、分类、指令、名称和价格。新增商品时先在目录中注册展示项，再在 `CheckinShopMixin` 增加购买处理，并将需要原子扣款的数据操作放入 `CheckinStore` 对应 store 模块；入口层只保留 AstrBot 指令装饰器。商品目录和购买行为应分别补充测试。
 
+万象画卷生图额度（`item_id="omnidraw:quota"`）是首个条件商品：仅在总开关 `checkin_omnidraw_link_enabled` 开启且 `plugin._omnidraw_bridge`（`checkin/omnidraw_bridge.py`，initialize 中按开关创建）可用、快照 `available` 时注入目录；购买流程先经 `spend_coins` 扣款，再调用 bridge `grant` 发放，发放失败时用 `add_coins` 原路退回。
+
 ## 签到卡主题模板
 
 每个主题位于 `templates/checkin_themes/<theme_id>/`，并提供 `style.css` 和 `preview.png`；默认、蓝、红、黄主题仍各自提供完整的 `index.html`。四季主题共用 `_shared/index.html` 和 `_shared/layout.css`，主题目录只保留配色样式与 `artwork.svg`，`get_checkin_card_template()` 在运行时将共享壳、主题 SVG 和 CSS 拼成最终自包含 HTML。最终模板会把 CSS 内联进 HTML 的 `/*__CHECKIN_CARD_CSS__*/` 标记，并将字体 base64 填入 `__CHECKIN_CARD_FONT_DATA__`，因此输出不得引用任何外部 URL 或跨目录资源；`test_all_registered_checkin_themes_are_self_contained` 会校验这一点。主题注册在 `checkin/themes.py`，模板内容变化时应同步 `version`，它参与签到卡缓存 key；共享四季壳或布局变化时，需要同步检查四季主题版本和缓存影响。

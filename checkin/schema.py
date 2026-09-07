@@ -221,6 +221,17 @@ class SchemaMixin:
             ON checkin_group_presence (user_id, last_seen_at)
             """
         )
+        conn.execute(
+            """
+            CREATE TABLE IF NOT EXISTS omnidraw_quota_purchases (
+                date_key TEXT NOT NULL,
+                user_id TEXT NOT NULL,
+                purchased INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (date_key, user_id),
+                FOREIGN KEY (user_id) REFERENCES checkin_users(user_id) ON DELETE CASCADE
+            )
+            """
+        )
 
     @staticmethod
     def _sync_builtin_themes(conn: sqlite3.Connection) -> None:

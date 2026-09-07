@@ -83,6 +83,15 @@ class BackupStoreMixin:
                     """
                 ).fetchall()
             ]
+            omnidraw_quota_purchases = [
+                dict(row)
+                for row in conn.execute(
+                    """
+                    SELECT * FROM omnidraw_quota_purchases
+                    ORDER BY date_key, user_id
+                    """
+                ).fetchall()
+            ]
         return {
             "schema_version": CHECKIN_SNAPSHOT_SCHEMA_VERSION,
             "plugin_name": CHECKIN_SNAPSHOT_PLUGIN_NAME,
@@ -94,6 +103,7 @@ class BackupStoreMixin:
             "achievements": achievements,
             "user_themes": user_themes,
             "group_presence": group_presence,
+            "omnidraw_quota_purchases": omnidraw_quota_purchases,
         }
 
     def _import_snapshot_sync(self, snapshot: dict[str, Any]) -> dict[str, Any]:
@@ -104,11 +114,13 @@ class BackupStoreMixin:
         achievements = normalized["achievements"]
         user_themes = normalized["user_themes"]
         group_presence = normalized["group_presence"]
+        omnidraw_quota_purchases = normalized["omnidraw_quota_purchases"]
 
         with closing(self._connect()) as conn:
             conn.execute("BEGIN")
             try:
                 conn.execute("DELETE FROM checkin_group_presence")
+                conn.execute("DELETE FROM omnidraw_quota_purchases")
                 conn.execute("DELETE FROM checkin_records")
                 conn.execute("DELETE FROM checkin_achievements")
                 conn.execute("DELETE FROM checkin_user_themes")
@@ -212,6 +224,15 @@ class BackupStoreMixin:
                         """,
                         group_presence,
                     )
+                if omnidraw_quota_purchases:
+                    conn.executemany(
+                        """
+                        INSERT INTO omnidraw_quota_purchases
+                            (date_key, user_id, purchased)
+                        VALUES (:date_key, :user_id, :purchased)
+                        """,
+                        omnidraw_quota_purchases,
+                    )
                 conn.commit()
             except Exception:
                 conn.rollback()
@@ -227,6 +248,7 @@ class BackupStoreMixin:
             "achievements": len(achievements),
             "user_themes": len(user_themes),
             "group_presence": len(group_presence),
+            "omnidraw_quota_purchases": len(omnidraw_quota_purchases),
             "exported_at": normalized["exported_at"],
             "imported_at": self.now_iso(),
         }

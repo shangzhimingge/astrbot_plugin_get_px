@@ -14,6 +14,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from astrbot_plugin_get_px.checkin import CheckinStore
+from astrbot_plugin_get_px.checkin.omnidraw_bridge import OmnidrawStatus
 from astrbot_plugin_get_px.checkin.shop import build_checkin_shop_items
 from astrbot_plugin_get_px.main import GetPxPlugin
 
@@ -29,6 +30,9 @@ class FakeEvent:
 
     def get_platform_name(self):
         return self._platform
+
+    def get_group_id(self):
+        return ""
 
     def get_sender_name(self):
         return "测试用户"
@@ -200,6 +204,178 @@ async def test_theme_shop_purchase_and_switch_commands() -> None:
         assert "米白" in switched
         preference = await plugin.checkin_store.get_user_preference("10001")
         assert preference.current_theme_id == "default"
+
+
+class _FakeBridge:
+    def __init__(self, *, available=True, blocked=False, unlimited=False, usable=True, grant_ok=True, base_limit=20, used=0, bonus=0, remaining=0):
+        self.available_flag = available
+        self.blocked = blocked
+        self.unlimited = unlimited
+        self.usable = usable
+        self.grant_ok = grant_ok
+        self.base_limit = base_limit
+        self.used = used
+        self.bonus = bonus
+        self.remaining = remaining
+        self.grant_calls = []
+
+    def snapshot(self, user_id="", group_id=""):
+        return OmnidrawStatus(
+            installed=True,
+            daily_limit_enabled=self.available_flag,
+            blocked=self.blocked,
+            usable=self.usable,
+            unlimited=self.unlimited,
+            base_limit=self.base_limit,
+            used=self.used,
+            bonus=self.bonus,
+            remaining=self.remaining,
+        )
+
+    async def grant(self, user_id, amount, *, display_name=""):
+        self.grant_calls.append((user_id, amount))
+        if self.grant_ok:
+            return OmnidrawStatus(
+                installed=True,
+                daily_limit_enabled=True,
+                granted=True,
+                remaining=25,
+                message=f"生图额度 +{amount} 张",
+            )
+        return OmnidrawStatus(installed=True, message="发放失败，请稍后再试")
+
+
+@pytest.mark.asyncio
+async def test_quota_product_hidden_without_bridge() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        plugin.config = {"checkin_enabled": True}
+        assert "生图额度" not in plugin._build_checkin_shop()
+
+
+@pytest.mark.asyncio
+async def test_quota_product_shown_when_bridge_available() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        plugin.config = {
+            "checkin_enabled": True,
+            "checkin_omnidraw_quota_cost": 75,
+        }
+        plugin._omnidraw_bridge = _FakeBridge()
+        shop = plugin._build_checkin_shop()
+        assert "签到商店 生图 [张数] - 生图额度（每张），75 金币" in shop
+
+
+@pytest.mark.asyncio
+async def test_quota_product_hidden_when_daily_limit_disabled() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        plugin.config = {"checkin_enabled": True}
+        plugin._omnidraw_bridge = _FakeBridge(available=False)
+        assert "生图额度" not in plugin._build_checkin_shop()
+
+
+@pytest.mark.asyncio
+async def test_quota_purchase_success_then_refund_on_grant_failure() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        plugin.config = {"checkin_enabled": True}
+        plugin._omnidraw_bridge = _FakeBridge()
+        event = FakeEvent()
+        await plugin.checkin_store.checkin(
+            user_id="10001", username="测试用户", bot_name="neko"
+        )
+        set_user_coins(plugin, 400)
+
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "5")]
+        assert any("生图额度 +5 张" in str(item) for item in outputs)
+        assert any("今日剩余生图额度: 25 张" in str(item) for item in outputs)
+        assert (await plugin.checkin_store.get_profile("10001")).coins == 25
+        assert plugin._omnidraw_bridge.grant_calls == [("10001", 5)]
+
+        set_user_coins(plugin, 400)
+        plugin._omnidraw_bridge.grant_ok = False
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "5")]
+        assert any("已退回" in str(item) for item in outputs)
+        assert (await plugin.checkin_store.get_profile("10001")).coins == 400
+
+
+@pytest.mark.asyncio
+async def test_quota_purchase_insufficient_coins() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        plugin.config = {"checkin_enabled": True}
+        plugin._omnidraw_bridge = _FakeBridge()
+        event = FakeEvent()
+        await plugin.checkin_store.checkin(
+            user_id="10001", username="测试用户", bot_name="neko"
+        )
+        set_user_coins(plugin, 10)
+
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "5")]
+        assert any("金币不足" in str(item) for item in outputs)
+        assert plugin._omnidraw_bridge.grant_calls == []
+
+
+@pytest.mark.asyncio
+async def test_quota_purchase_precheck_messages() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        plugin.config = {"checkin_enabled": True}
+        event = FakeEvent()
+
+        plugin._omnidraw_bridge = _FakeBridge(available=False)
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
+        assert any("未启用每日生图限制" in str(item) for item in outputs)
+
+        plugin._omnidraw_bridge = _FakeBridge(blocked=True)
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
+        assert any("黑名单" in str(item) for item in outputs)
+
+        plugin._omnidraw_bridge = _FakeBridge(unlimited=True)
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
+        assert any("不限额" in str(item) for item in outputs)
+
+        plugin._omnidraw_bridge = _FakeBridge(usable=False)
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
+        assert any("白名单" in str(item) for item in outputs)
+
+
+@pytest.mark.asyncio
+async def test_omnidraw_quota_status_display() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        event = FakeEvent()
+        # 基础余额还在：显示基础 + 今日限时
+        plugin._omnidraw_bridge = _FakeBridge(
+            base_limit=20, used=6, bonus=3, remaining=17
+        )
+        line = await plugin._omnidraw_quota_status(event, "10001")
+        assert "基础 14 张" in line and "今日限时 3 张" in line
+        # 基础用完：只显示今日额度
+        plugin._omnidraw_bridge = _FakeBridge(
+            base_limit=20, used=20, bonus=3, remaining=3
+        )
+        line = await plugin._omnidraw_quota_status(event, "10001")
+        assert "今日额度 3 张" in line and "基础" not in line
+
+
+@pytest.mark.asyncio
+async def test_quota_purchase_free_cost_grant_failure_does_not_refund() -> None:
+    with tempfile.TemporaryDirectory() as tmp:
+        plugin = make_plugin(tmp)
+        plugin.config = {"checkin_enabled": True, "checkin_omnidraw_quota_cost": 0}
+        plugin._omnidraw_bridge = _FakeBridge(grant_ok=False)
+        event = FakeEvent()
+        await plugin.checkin_store.checkin(
+            user_id="10001", username="测试用户", bot_name="neko"
+        )
+        set_user_coins(plugin, 200)
+
+        outputs = [item async for item in plugin._handle_buy_checkin_quota(event, "1")]
+        assert any("发放失败" in str(item) for item in outputs)
+        assert not any("退回" in str(item) for item in outputs)
+        assert (await plugin.checkin_store.get_profile("10001")).coins == 200
 
 
 @pytest.mark.asyncio

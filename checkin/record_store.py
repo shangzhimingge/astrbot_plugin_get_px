@@ -381,6 +381,109 @@ class RecordStoreMixin:
             success=True, profile=updated_profile, cost=cost, message="扣费成功"
         )
 
+    async def add_coins(self, *, user_id: str, amount: int) -> CoinSpendResult:
+        """退回金币，用于跨插件发放失败后的补偿。"""
+        if isinstance(amount, bool) or not isinstance(amount, int) or amount <= 0:
+            raise ValueError("coin amount must be a positive integer")
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._add_coins_sync, str(user_id or ""), int(amount)
+            )
+
+    def _add_coins_sync(self, user_id: str, amount: int) -> CoinSpendResult:
+        if not user_id:
+            raise ValueError("user_id is required")
+        now = self.now_iso()
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(
+                    """
+                    INSERT OR IGNORE INTO checkin_users (
+                        user_id, coins, affection, total_days, streak_days,
+                        last_checkin_date, boost_start_date, boost_until_date,
+                        repeat_penalty_date, repeat_penalty_total,
+                        created_at, updated_at
+                    )
+                    VALUES (?, 0, 0, 0, 0, '', '', '', '', 0, ?, ?)
+                    """,
+                    (user_id, now, now),
+                )
+                conn.execute(
+                    "UPDATE checkin_users SET coins = coins + ?, updated_at = ? "
+                    "WHERE user_id = ?",
+                    (amount, now, user_id),
+                )
+                row = conn.execute(
+                    "SELECT * FROM checkin_users WHERE user_id = ?",
+                    (user_id,),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return CoinSpendResult(
+            success=True,
+            profile=self._row_to_profile(row),
+            cost=amount,
+            message="金币已退回",
+        )
+
+    async def get_omnidraw_quota_purchased(
+        self, *, user_id: str, date_key: str
+    ) -> int:
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._get_omnidraw_quota_purchased_sync,
+                str(user_id or ""),
+                str(date_key or ""),
+            )
+
+    def _get_omnidraw_quota_purchased_sync(
+        self, user_id: str, date_key: str
+    ) -> int:
+        if not user_id or not date_key:
+            return 0
+        with closing(self._connect()) as conn:
+            row = conn.execute(
+                "SELECT purchased FROM omnidraw_quota_purchases "
+                "WHERE date_key = ? AND user_id = ?",
+                (date_key, user_id),
+            ).fetchone()
+        return int(row["purchased"]) if row else 0
+
+    async def add_omnidraw_quota_purchase(
+        self, *, user_id: str, date_key: str, amount: int
+    ) -> int:
+        async with self._lock:
+            return await asyncio.to_thread(
+                self._add_omnidraw_quota_purchase_sync,
+                str(user_id or ""),
+                str(date_key or ""),
+                max(0, int(amount)),
+                self.now_iso(),
+            )
+
+    def _add_omnidraw_quota_purchase_sync(
+        self, user_id: str, date_key: str, amount: int, now: str
+    ) -> int:
+        with closing(self._connect()) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                row = conn.execute(
+                    "INSERT INTO omnidraw_quota_purchases (date_key, user_id, purchased) "
+                    "VALUES (?, ?, ?) "
+                    "ON CONFLICT(date_key, user_id) DO UPDATE SET "
+                    "purchased = purchased + excluded.purchased "
+                    "RETURNING purchased",
+                    (date_key, user_id, amount),
+                ).fetchone()
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+        return int(row["purchased"])
+
     async def update_record_content(
         self,
         *,
