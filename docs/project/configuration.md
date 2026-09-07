@@ -82,3 +82,4 @@
 - `dedupe_days` 缩短天数会在重载时清理超期记录，增加天数无法恢复已清理历史。
 - `image_quality` 不影响签到背景，签到卡/日历背景画质由 `checkin_card_quality_tier` 独立控制。
 - `pixiv_refresh_token` 留空时 Lolicon 失败直接报错，不进行 Pixiv 回退。
+- schema 顶层保留 37 个 `invisible` 旧扁平键（过渡版）。AstrBot 4.27+ 在加载插件配置时会删除 schema 之外的键，这些 invisible 键让旧扁平值在框架裁剪前存活，`_migrate_grouped_config` 随后搬到对应分组。迁移完成后下一版本可删除这些顶层键。
