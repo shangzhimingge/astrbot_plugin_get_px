@@ -1626,6 +1626,9 @@ dialog p.member-history-note {
 }
 
 .policy-list-editor { margin-top: 14px; padding: 16px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.policy-rule-mode-group { margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--surface-soft); overflow: hidden; }
+.policy-rule-mode-group .policy-mode-status { margin: 0; border-radius: 0; border-bottom: 1px solid var(--border); }
+.policy-rule-mode-group .policy-list-editor { margin: 0; border: 0; border-radius: 0; background: transparent; }
 .policy-list-editor h4 { margin: 0 0 10px; color: var(--text); }
 .policy-list-add { display: flex; gap: 8px; }
 .policy-list-add input { flex: 1; min-width: 0; border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 8px 10px; background: var(--surface); color: var(--text); }
@@ -1635,6 +1638,7 @@ dialog p.member-history-note {
 .policy-chip button { border: 0; background: transparent; color: inherit; cursor: pointer; }
 .policy-bulk-actions { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
 .policy-mode-status { padding: 10px 12px; border-radius: var(--radius-sm); background: var(--primary-soft); color: var(--text-muted); }
+.policy-batch-status { margin: 0; }
 @media (max-width: 620px) { .policy-list-add, .policy-bulk-actions { flex-direction: column; } .policy-list-add button, .policy-bulk-actions button { width: 100%; } }
 
 .policy-badge {

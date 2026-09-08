@@ -231,21 +231,23 @@
                   <input id="policyBuiltinToggle" type="checkbox">
                   <span><strong>启用内置安全词</strong><small>开启使用内置词与全局列表并忽略独立列表；关闭仅使用当前会话独立列表。</small></span>
                 </label>
+                <div class="policy-rule-mode-group">
                   <p id="policyRuleModeStatus" class="policy-mode-status" aria-live="polite"></p>
-                  <p id="policyBatchStatus" class="policy-mode-status" aria-live="polite"></p>
                   <section class="policy-list-editor" aria-labelledby="policyCustomTermTitle">
                     <h4 id="policyCustomTermTitle">独立自定义屏蔽词</h4>
                     <div class="policy-list-add"><input id="policyCustomTermInput" type="text"><button id="policyCustomTermAddBtn" type="button">添加</button></div>
                     <p id="policyCustomTermError" class="form-error" aria-live="polite"></p><div id="policyCustomTermList" class="policy-chip-list" aria-live="polite"></div>
                     <div class="policy-bulk-actions"><button type="button" data-policy-field="custom_terms" data-policy-target="group">应用到全部群聊策略</button><button type="button" data-policy-field="custom_terms" data-policy-target="private">应用到全部私聊策略</button><button type="button" data-policy-field="custom_terms" data-policy-target="all">应用到全部策略</button></div>
                   </section>
-                  <section class="policy-list-editor" aria-labelledby="policyIllustIdTitle">
+                </div>
+                <section class="policy-list-editor" aria-labelledby="policyIllustIdTitle">
                     <h4 id="policyIllustIdTitle">独立作品 ID 黑名单</h4>
                     <div class="policy-list-add"><input id="policyIllustIdInput" type="text" inputmode="numeric"><button id="policyIllustIdAddBtn" type="button">添加</button></div>
                     <p id="policyIllustIdError" class="form-error" aria-live="polite"></p><div id="policyIllustIdList" class="policy-chip-list" aria-live="polite"></div>
                     <div class="policy-bulk-actions"><button type="button" data-policy-field="blacklisted_illust_ids" data-policy-target="group">应用到全部群聊策略</button><button type="button" data-policy-field="blacklisted_illust_ids" data-policy-target="private">应用到全部私聊策略</button><button type="button" data-policy-field="blacklisted_illust_ids" data-policy-target="all">应用到全部策略</button></div>
-                  </section>
+                </section>
                 <p id="policyError" class="form-error" aria-live="polite"></p>
+                <p id="policyBatchStatus" class="policy-mode-status policy-batch-status" aria-live="polite" hidden></p>
                 <div class="policy-actions">
                   <button id="policySaveBtn" type="submit">保存修改</button>
                   <button id="policyDeleteBtn" type="button">删除会话</button>

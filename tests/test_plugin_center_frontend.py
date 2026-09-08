@@ -32,10 +32,25 @@ def test_plugin_center_page_exposes_management_workspaces() -> None:
     assert html.count('data-policy-field="custom_terms"') == 3
     assert html.count('data-policy-field="blacklisted_illust_ids"') == 3
     assert 'id="policyBatchStatus"' in html and 'aria-live="polite"' in html
+    assert 'id="policyBatchStatus" class="policy-mode-status policy-batch-status" aria-live="polite" hidden' in html
+    assert 'class="policy-rule-mode-group"' in html
+    mode = html.index('id="policyRuleModeStatus"')
+    custom = html.index('id="policyCustomTermTitle"')
+    assert mode < custom < html.index('id="policyIllustIdTitle"')
+    assert html.index('id="policyError"') < html.index('id="policyBatchStatus"') < html.index('class="policy-actions"')
     app = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
     assert "async function applyPolicyField" in app
     assert "content-safety/policies/apply-field" in app
     assert "请先保存当前修改再批量应用。" in app
+    assert "els.policyBatchStatus.hidden = !dirty" in app
+
+
+def test_policy_editor_uses_compact_rule_mode_and_hidden_batch_status_styles() -> None:
+    styles = (PAGE_DIR / "styles.css").read_text(encoding="utf-8")
+    assert ".policy-rule-mode-group" in styles
+    assert ".policy-rule-mode-group .policy-list-editor" in styles
+    assert "overflow: hidden" in styles
+    assert ".policy-batch-status { margin: 0; }" in styles
 
 
 def test_plugin_center_import_accepts_json_backups_only() -> None:

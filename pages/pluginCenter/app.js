@@ -675,6 +675,7 @@ function renderPolicyManager() {
   els.policyAddForm.setAttribute("aria-busy", String(busy));
   const dirty = draft && policyState.hasUnsavedPolicyDraft(bucket);
   els.policyBatchStatus.textContent = dirty ? "请先保存当前修改再批量应用。" : "";
+  els.policyBatchStatus.hidden = !dirty;
   document.querySelectorAll("[data-policy-field][data-policy-target]").forEach((control) => { control.disabled = busy || dirty || !draft; });
   document.querySelectorAll("[data-policy-remove]").forEach((control) => { control.disabled = busy; });
   [els.policyCustomTermInput, els.policyCustomTermAddBtn, els.policyIllustIdInput, els.policyIllustIdAddBtn].forEach((control) => { if (control) control.disabled = busy || !draft; });
