@@ -264,7 +264,12 @@ class SessionSafetyService:
             return
         for key, (present, value, value_copy) in root_snapshot.items():
             if present:
-                self.config[key] = deepcopy(value_copy)
+                current = self.config.get(key)
+                if isinstance(current, list) and isinstance(value, list):
+                    current[:] = deepcopy(value_copy)
+                    self.config[key] = current
+                else:
+                    self.config[key] = deepcopy(value_copy)
             else:
                 self.config.pop(key, None)
 

@@ -400,3 +400,52 @@ def test_grouped_policy_compat_migration_is_atomic_on_save_failure(pre_materiali
         assert config["content_dedupe"][MIGRATION_KEY] is False
     else:
         assert "content_dedupe" not in config
+
+
+
+def test_lolicon_exclude_ai_document_contracts_are_consistent():
+    import json
+    schema = json.loads(Path("_conf_schema.json").read_text(encoding="utf-8"))
+    hint = schema["pixiv_source"]["items"]["lolicon_exclude_ai"]["hint"]
+    readme = Path("README.md").read_text(encoding="utf-8")
+    config_doc = Path("docs/project/configuration.md").read_text(encoding="utf-8")
+    combined = "\n".join((hint, readme, config_doc))
+    assert "R18 始终关闭" not in combined
+    assert "AI" in hint and "当前会话" in combined
+    assert "lolicon_exclude_ai" in schema["pixiv_source"]["items"]
+    assert "lolicon_exclude_ai" in readme and "lolicon_exclude_ai" in config_doc
+
+
+@pytest.mark.asyncio
+async def test_nested_apply_all_failure_rolls_back_lists_markers_and_runtime():
+    group_nested = [{"__template_key": "group_policy", "group_id": "g1",
+                     "general_only_enabled": True, "builtin_terms_enabled": True,
+                     "custom_terms": ["old"], "blacklisted_illust_ids": ["1"]}]
+    private_nested = [{"__template_key": "private_policy", "user_id": "u1",
+                       "general_only_enabled": True, "builtin_terms_enabled": True,
+                       "custom_terms": [], "blacklisted_illust_ids": []}]
+    group_compat = [{"group_id": "legacy"}]
+    private_compat = [{"user_id": "legacy"}]
+    config = Config({"content_dedupe": {CONFIG_KEY: group_nested,
+        PRIVATE_CONFIG_KEY: private_nested, MIGRATION_KEY: True},
+        CONFIG_KEY: group_compat, PRIVATE_CONFIG_KEY: private_compat,
+        MIGRATION_KEY: True, "runtime": {"_grouped_config_migrated": True}})
+    service = GroupSafetyService(config)
+    await service.initialize(TrackingLegacy([]))
+    config.save_calls = 0
+    group_ref, private_ref = group_nested, private_nested
+    group_before, private_before = deepcopy(group_nested), deepcopy(private_nested)
+    runtime_before = deepcopy(config["runtime"])
+    compat_refs = (config[CONFIG_KEY], config[PRIVATE_CONFIG_KEY])
+    compat_before = (deepcopy(compat_refs[0]), deepcopy(compat_refs[1]))
+    config["fail"] = True
+    with pytest.raises(RuntimeError):
+        await service.apply_policy_field("group", "g1", "custom_terms", "all")
+    assert config.save_calls == 1
+    assert config["content_dedupe"][CONFIG_KEY] is group_ref
+    assert config["content_dedupe"][PRIVATE_CONFIG_KEY] is private_ref
+    assert group_nested == group_before and private_nested == private_before
+    assert config[CONFIG_KEY] is compat_refs[0] and config[PRIVATE_CONFIG_KEY] is compat_refs[1]
+    assert config[CONFIG_KEY] == compat_before[0] and config[PRIVATE_CONFIG_KEY] == compat_before[1]
+    assert config["content_dedupe"][MIGRATION_KEY] is True
+    assert config["runtime"] == runtime_before

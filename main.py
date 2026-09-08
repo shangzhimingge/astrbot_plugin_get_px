@@ -820,7 +820,15 @@ class GetPxPlugin(
             # pre-materialize schema defaults, or omit the three keys entirely.
             group_present = isinstance(config.get("content_dedupe"), dict)
             group = config.get("content_dedupe") if group_present else None
-            group_copy = deepcopy(group) if group_present else None
+            nested_snapshot = {}
+            if group_present:
+                for key in policy_keys:
+                    present = key in group
+                    value = group.get(key)
+                    nested_snapshot[key] = (present, value, deepcopy(value))
+            runtime = config.get("runtime")
+            runtime_marker_present = isinstance(runtime, dict) and "_grouped_config_migrated" in runtime
+            runtime_marker = (runtime.get("_grouped_config_migrated") if runtime_marker_present else None)
             tracked = (*policy_keys, "_grouped_config_migrated")
             root_snapshot = {
                 key: (key in config, config.get(key), deepcopy(config.get(key)))
@@ -848,9 +856,23 @@ class GetPxPlugin(
                     saver()
             except Exception as exc:
                 if group_present:
-                    group.clear(); group.update(deepcopy(group_copy))
+                    for key, (present, value, value_copy) in nested_snapshot.items():
+                        if present:
+                            current = group.get(key)
+                            if isinstance(value, list):
+                                value[:] = deepcopy(value_copy)
+                                group[key] = value
+                            else:
+                                group[key] = deepcopy(value_copy)
+                        else:
+                            group.pop(key, None)
                 else:
                     config.pop("content_dedupe", None)
+                if isinstance(runtime, dict):
+                    if runtime_marker_present:
+                        runtime["_grouped_config_migrated"] = runtime_marker
+                    else:
+                        runtime.pop("_grouped_config_migrated", None)
                 for key, (present, value, value_copy) in root_snapshot.items():
                     if present:
                         current = config.get(key)
