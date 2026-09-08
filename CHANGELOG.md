@@ -11,8 +11,6 @@
 - 内置安全词开启时使用内置词与全局列表，关闭时仅使用当前会话独立列表。
 - 管理 API 保留既有内容安全字段，并新增群策略查询和原子更新端点。
 
-# 更新日志
-
 ## v3.7.0 (2026-09-06)
 
 ### 新增
@@ -25,7 +23,7 @@
 
 ### 变更
 - 配置 schema 从扁平结构改为 6 个 object 分组（Pixiv 图源、图片去重、万象联动、签到基础、签到商店、运行参数）。WebUI 配置页按分组折叠展示。`main.py` 配置读取层先遍历分组取值、找不到再回退扁平 key。
-- schema 顶层保留 37 个 `invisible` 旧扁平键作为过渡兼容。AstrBot 4.27+ 加载插件配置时会删除 schema 之外的键，这些 invisible 键让旧扁平值在框架裁剪前存活，`_migrate_grouped_config` 随后搬到对应分组。迁移完成后下一版本将删除这些顶层键。
+- schema 顶层保留 `invisible` 旧扁平键作为过渡兼容。AstrBot 4.27+ 加载插件配置时会删除 schema 之外的键，这些 invisible 键让旧扁平值在框架裁剪前存活，`_migrate_grouped_config` 随后搬到对应分组。迁移完成后下一版本将删除这些顶层键。
 - 收紧 5 项定价/阈值配置的 slider 上限，代码侧读取范围同步对齐：`p_coin_cost` 500→200、`auto_downgrade_original_mb` 100→25、`checkin_omnidraw_quota_cost` 1000→300、`checkin_omnidraw_quota_daily_max` 100→30、`checkin_background_refresh_cost` 500→300。
 - 签到备份快照新增 `omnidraw_quota_purchases` 表导出/导入，每日购买计数不再因恢复而丢失。旧快照缺该字段时兼容导入。
 

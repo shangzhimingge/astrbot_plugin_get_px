@@ -299,3 +299,41 @@ async def test_group_and_private_metadata_survive_reinitialize():
     private = await reloaded.get_private_policy("u1")
     assert group["updated_by"] == private["updated_by"] == "web"
     assert group["updated_at"] and private["updated_at"]
+
+
+@pytest.mark.asyncio
+async def test_grouped_config_migrates_flat_policies_and_reloads_from_nested_container():
+    legacy_entry = {"group_id": "g1", "general_only_enabled": False,
+                    "builtin_terms_enabled": True, "custom_terms": ["old"]}
+    grouped = {CONFIG_KEY: [], PRIVATE_CONFIG_KEY: [], MIGRATION_KEY: False}
+    config = Config({CONFIG_KEY: [legacy_entry], PRIVATE_CONFIG_KEY: [],
+                     MIGRATION_KEY: False, "content_dedupe": grouped})
+    service = GroupSafetyService(config)
+    await service.initialize(TrackingLegacy([]))
+    assert grouped[CONFIG_KEY][0]["group_id"] == "g1"
+    assert grouped[CONFIG_KEY][0]["custom_terms"] == ["old"]
+    assert config[CONFIG_KEY] == [legacy_entry]
+
+    reloaded = GroupSafetyService(config)
+    await reloaded.initialize(TrackingLegacy([]))
+    assert (await reloaded.get_group_policy("g1"))["custom_terms"] == ["old"]
+
+
+@pytest.mark.asyncio
+async def test_grouped_config_failed_save_restores_nested_identity_and_compatibility():
+    grouped = {CONFIG_KEY: [], PRIVATE_CONFIG_KEY: [], MIGRATION_KEY: True}
+    config = Config({"content_dedupe": grouped, CONFIG_KEY: [],
+                     PRIVATE_CONFIG_KEY: [], MIGRATION_KEY: True})
+    service = GroupSafetyService(config)
+    await service.upsert_group_policy("g1", general_only_enabled=True,
+                                      builtin_terms_enabled=True)
+    nested_ref = grouped[CONFIG_KEY]
+    before = deepcopy(nested_ref)
+    config["fail"] = True
+    with pytest.raises(RuntimeError):
+        await service.upsert_group_policy("g2", general_only_enabled=False,
+                                          builtin_terms_enabled=False)
+    assert grouped[CONFIG_KEY] is nested_ref
+    assert grouped[CONFIG_KEY] == before
+    assert config[CONFIG_KEY] == []
+    assert config[MIGRATION_KEY] is True

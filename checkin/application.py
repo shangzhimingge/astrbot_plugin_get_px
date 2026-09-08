@@ -280,6 +280,7 @@ class CheckinApplicationMixin:
                         event,
                         record,
                         render_tier=preferred_tier,
+                        policy=policy,
                     )
                     if reselected is not None and reselected.mode == "pixiv_daily":
                         background = reselected

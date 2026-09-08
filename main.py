@@ -718,6 +718,9 @@ class GetPxPlugin(
         "dedupe_days": "content_dedupe",
         "dedupe_ttl_hours": "content_dedupe",
         "dedupe_days_migrated": "content_dedupe",
+        "group_content_safety_policies": "content_dedupe",
+        "private_content_safety_policies": "content_dedupe",
+        "group_content_safety_policies_migrated": "content_dedupe",
         "checkin_omnidraw_link_enabled": "checkin_omnidraw",
         "checkin_omnidraw_quota_cost": "checkin_omnidraw",
         "checkin_omnidraw_quota_default": "checkin_omnidraw",
@@ -824,7 +827,11 @@ class GetPxPlugin(
             if not isinstance(group, dict):
                 group = {}
                 config[group_key] = group
-            # 扁平值优先，覆盖组里已有的 schema 默认值
+            # 策略模板同时有 invisible 扁平兼容键；仅在嵌套值为空时
+            # 迁移非空旧值，避免框架默认的 [] 覆盖现有分组策略。
+            if key in {"group_content_safety_policies", "private_content_safety_policies", "group_content_safety_policies_migrated"}:
+                if group.get(key) and not flat_val:
+                    continue
             group[key] = flat_val
             moved.append(key)
         self._cfg_set("_grouped_config_migrated", True)

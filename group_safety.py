@@ -214,66 +214,100 @@ class SessionSafetyService:
             for identifier, record in sorted(records.items())
         ]
 
+    def _container(self) -> dict:
+        """Return the grouped config container while keeping the root config as saver."""
+        grouped = self.config.get("content_dedupe")
+        return grouped if isinstance(grouped, dict) else self.config
+
+    def _get_config(self, key: str, default=None):
+        container = self._container()
+        if key in container:
+            nested = container.get(key, default)
+            # AstrBot may materialize invisible flat compatibility defaults.
+            # A non-empty legacy value still needs one-time migration into the
+            # grouped container when the nested template is empty.
+            if container is not self.config and not nested:
+                legacy = self.config.get(key, default)
+                if legacy:
+                    return legacy
+            return nested
+        return self.config.get(key, default)
+
+    def _set_config(self, key: str, value) -> None:
+        self._container()[key] = value
+
+    def _snapshot_config(self):
+        container = self._container()
+        return (
+            container,
+            deepcopy(container),
+            {key: (key in self.config, self.config.get(key),
+                   deepcopy(self.config.get(key))) for key in
+             (CONFIG_KEY, PRIVATE_CONFIG_KEY, MIGRATION_KEY)},
+        )
+
+    def _restore_config(self, snapshot) -> None:
+        container, container_copy, root_snapshot = snapshot
+        existing_refs = {key: self.config.get(key) for key in
+                        (CONFIG_KEY, PRIVATE_CONFIG_KEY, MIGRATION_KEY)}
+        nested_refs = {key: container.get(key) for key in
+                       (CONFIG_KEY, PRIVATE_CONFIG_KEY, MIGRATION_KEY)}
+        restored = deepcopy(container_copy)
+        refs = nested_refs if container is not self.config else existing_refs
+        for key, ref in refs.items():
+            if isinstance(ref, list) and key in restored:
+                ref[:] = deepcopy(restored[key])
+                restored[key] = ref
+        container.clear()
+        container.update(restored)
+        if container is self.config:
+            return
+        for key, (present, value, value_copy) in root_snapshot.items():
+            if present:
+                self.config[key] = deepcopy(value_copy)
+            else:
+                self.config.pop(key, None)
+
     def _save_scope(self, *, private: bool, candidate, migrated=None):
         config_key, _, _ = self._scope(private)
-        old_present = config_key in self.config
-        old_value = self.config.get(config_key)
-        old_copy = deepcopy(old_value)
-        old_migration_present = MIGRATION_KEY in self.config
-        old_migration = self.config.get(MIGRATION_KEY)
+        snapshot = self._snapshot_config()
         serialized = self._entries(candidate, private=private)
-        if isinstance(old_value, list):
-            old_value[:] = deepcopy(serialized)
+        current = self._container().get(config_key)
+        if isinstance(current, list):
+            current[:] = deepcopy(serialized)
         else:
-            self.config[config_key] = deepcopy(serialized)
+            self._set_config(config_key, deepcopy(serialized))
         if not private and migrated is not None:
-            self.config[MIGRATION_KEY] = bool(migrated)
+            self._set_config(MIGRATION_KEY, bool(migrated))
         try:
             saver = getattr(self.config, "save_config", None)
             if not callable(saver):
                 raise RuntimeError("config.save_config is required")
             saver()
         except Exception:
-            if isinstance(old_value, list):
-                old_value[:] = old_copy
-                self.config[config_key] = old_value
-            elif old_present:
-                self.config[config_key] = old_copy
-            else:
-                self.config.pop(config_key, None)
-            if not private:
-                if old_migration_present:
-                    self.config[MIGRATION_KEY] = old_migration
-                else:
-                    self.config.pop(MIGRATION_KEY, None)
+            self._restore_config(snapshot)
             raise
 
     def _save_candidates(self, group_candidate=None, private_candidate=None, migrated=None):
-        old = {key: deepcopy(self.config.get(key)) for key in (CONFIG_KEY, PRIVATE_CONFIG_KEY)}
-        old_migration = self.config.get(MIGRATION_KEY)
+        snapshot = self._snapshot_config()
         try:
             if group_candidate is not None:
-                current = self.config.get(CONFIG_KEY)
                 serialized = self._entries(group_candidate, private=False)
+                current = self._container().get(CONFIG_KEY)
                 if isinstance(current, list): current[:] = deepcopy(serialized)
-                else: self.config[CONFIG_KEY] = deepcopy(serialized)
+                else: self._set_config(CONFIG_KEY, deepcopy(serialized))
             if private_candidate is not None:
-                current = self.config.get(PRIVATE_CONFIG_KEY)
                 serialized = self._entries(private_candidate, private=True)
+                current = self._container().get(PRIVATE_CONFIG_KEY)
                 if isinstance(current, list): current[:] = deepcopy(serialized)
-                else: self.config[PRIVATE_CONFIG_KEY] = deepcopy(serialized)
-            if migrated is not None: self.config[MIGRATION_KEY] = bool(migrated)
+                else: self._set_config(PRIVATE_CONFIG_KEY, deepcopy(serialized))
+            if migrated is not None:
+                self._set_config(MIGRATION_KEY, bool(migrated))
             saver = getattr(self.config, "save_config", None)
             if not callable(saver): raise RuntimeError("config.save_config is required")
             saver()
         except Exception:
-            for key, value in old.items():
-                current = self.config.get(key)
-                if isinstance(current, list) and isinstance(value, list): current[:] = value
-                elif value is None: self.config.pop(key, None)
-                else: self.config[key] = value
-            if old_migration is None: self.config.pop(MIGRATION_KEY, None)
-            else: self.config[MIGRATION_KEY] = old_migration
+            self._restore_config(snapshot)
             raise
 
     def _log_warnings(self, source: str, warnings):
@@ -282,7 +316,7 @@ class SessionSafetyService:
 
     async def initialize(self, legacy_store):
         async with self._lock:
-            raw_private = self.config.get(PRIVATE_CONFIG_KEY, [])
+            raw_private = self._get_config(PRIVATE_CONFIG_KEY, [])
             private_entries, warnings = _normalize_entries(raw_private, private=True)
             self._log_warnings("private config", warnings)
             self._install(private_entries, private=True)
@@ -297,10 +331,10 @@ class SessionSafetyService:
                         [f"save failed error_type={type(exc).__name__}"],
                     )
 
-            raw_group = self.config.get(CONFIG_KEY, [])
+            raw_group = self._get_config(CONFIG_KEY, [])
             group_entries, warnings = _normalize_entries(raw_group)
             self._log_warnings("config", warnings)
-            migrated = bool(self.config.get(MIGRATION_KEY, False))
+            migrated = bool(self._get_config(MIGRATION_KEY, False))
             use_legacy = not migrated and isinstance(raw_group, list) and not raw_group
             if use_legacy:
                 try:
