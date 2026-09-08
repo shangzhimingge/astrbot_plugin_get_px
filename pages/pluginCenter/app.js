@@ -95,6 +95,8 @@ const els = {
   policyCount: $("policyCount"), policyEditorEmpty: $("policyEditorEmpty"),
   policyIdLabel: $("policyIdLabel"), policyAddTitle: $("policyAddTitle"),
   policyAddLabel: $("policyAddLabel"), policyScopeHint: $("policyScopeHint"),
+  policyRuleModeStatus: $("policyRuleModeStatus"), policyCustomTermInput: $("policyCustomTermInput"), policyCustomTermAddBtn: $("policyCustomTermAddBtn"), policyCustomTermList: $("policyCustomTermList"), policyCustomTermError: $("policyCustomTermError"), policyIllustIdInput: $("policyIllustIdInput"), policyIllustIdAddBtn: $("policyIllustIdAddBtn"), policyIllustIdList: $("policyIllustIdList"), policyIllustIdError: $("policyIllustIdError"),
+  policyBatchStatus: $("policyBatchStatus"),
 };
 
 function escapeHtml(value) {
@@ -611,7 +613,7 @@ function renderPolicyManager() {
   const scope = state.policyScope;
   const bucket = activePolicyBucket();
   const definition = activePolicyDefinition();
-  const busy = bucket.loading || bucket.saving || bucket.deleting;
+  const busy = bucket.loading || bucket.saving || bucket.deleting || bucket.applying;
   const query = bucket.search.trim().toLocaleLowerCase("zh-CN");
   const rows = bucket.records.filter((record) =>
     policyState.policyRecordId(scope, record).toLocaleLowerCase("zh-CN").includes(query),
@@ -655,6 +657,9 @@ function renderPolicyManager() {
   els.policyGroupId.value = draft ? policyState.policyRecordId(scope, draft) : "";
   els.policyGeneralToggle.checked = draft?.general_only_enabled === true;
   els.policyBuiltinToggle.checked = draft?.builtin_terms_enabled === true;
+  els.policyRuleModeStatus.textContent = draft?.builtin_terms_enabled ? "全局规则模式：使用内置安全词、全局自定义屏蔽词和全局作品黑名单；忽略本会话独立列表。" : "独立规则模式：仅使用本会话独立屏蔽词和作品 ID；不读取全局列表。";
+  const renderItems = (field, root, errorRoot) => { const values = draft?.[field] || []; root.innerHTML = values.map((value, index) => `<span class="policy-chip">${escapeHtml(value)}<button type="button" data-policy-remove="${field}" data-policy-index="${index}" aria-label="删除 ${escapeHtml(value)}">×</button></span>`).join(""); root.querySelectorAll("[data-policy-remove]").forEach((button) => button.addEventListener("click", () => { try { setPolicyBucket(scope, policyState.removePolicyListItem(activePolicyBucket(), field, Number(button.dataset.policyIndex))); renderPolicyManager(); } catch (error) { errorRoot.textContent = error.message; } })); };
+  renderItems("custom_terms", els.policyCustomTermList, els.policyCustomTermError); renderItems("blacklisted_illust_ids", els.policyIllustIdList, els.policyIllustIdError);
   els.policySavedAt.textContent = draft?.updated_at ? `保存于 ${formatDate(draft.updated_at)}` : "尚无保存记录";
   els.policyEditorStatus.textContent = bucket.error
     ? "操作失败"
@@ -665,9 +670,14 @@ function renderPolicyManager() {
   [els.policyGeneralToggle, els.policyBuiltinToggle, els.policySaveBtn, els.policyDeleteBtn]
     .forEach((control) => { control.disabled = busy || !draft; });
   [els.policyAddInput, els.policyAddCancel, els.policyAddSubmit]
-    .forEach((control) => { control.disabled = bucket.saving; });
+    .forEach((control) => { control.disabled = busy; });
   els.policyEditorForm.setAttribute("aria-busy", String(busy));
-  els.policyAddForm.setAttribute("aria-busy", String(bucket.saving));
+  els.policyAddForm.setAttribute("aria-busy", String(busy));
+  const dirty = draft && policyState.hasUnsavedPolicyDraft(bucket);
+  els.policyBatchStatus.textContent = dirty ? "请先保存当前修改再批量应用。" : "";
+  document.querySelectorAll("[data-policy-field][data-policy-target]").forEach((control) => { control.disabled = busy || dirty || !draft; });
+  document.querySelectorAll("[data-policy-remove]").forEach((control) => { control.disabled = busy; });
+  [els.policyCustomTermInput, els.policyCustomTermAddBtn, els.policyIllustIdInput, els.policyIllustIdAddBtn].forEach((control) => { if (control) control.disabled = busy || !draft; });
 }
 
 async function confirmPolicyDraftDiscard(message) {
@@ -731,6 +741,7 @@ async function addPolicy(id) {
       [definition.idKey]: id,
       general_only_enabled: true,
       builtin_terms_enabled: true,
+      custom_terms: [], blacklisted_illust_ids: [],
     });
     setPolicyBucket(
       scope,
@@ -765,6 +776,7 @@ async function savePolicy() {
       [definition.idKey]: policyState.policyRecordId(scope, draft),
       general_only_enabled: draft.general_only_enabled,
       builtin_terms_enabled: draft.builtin_terms_enabled,
+      custom_terms: draft.custom_terms || [], blacklisted_illust_ids: draft.blacklisted_illust_ids || [],
     });
     setPolicyBucket(
       scope,
@@ -780,6 +792,19 @@ async function savePolicy() {
     setPolicyBucket(scope, { ...activePolicyBucket(scope), saving: false });
     renderPolicyManager();
   }
+}
+
+async function applyPolicyField(field, target) {
+  const sourceScope = state.policyScope, bucket = activePolicyBucket();
+  if (!bucket.selectedId || bucket.applying) return;
+  if (policyState.hasUnsavedPolicyDraft(activePolicyBucket())) { showToast("请先保存当前修改再批量应用。", "error"); return; }
+  setPolicyBucket(sourceScope, { ...bucket, applying: true, error: "" }); renderPolicyManager();
+  try {
+    const result = await apiPost("content-safety/policies/apply-field", policyState.buildPolicyBatchRequest(sourceScope, bucket.selectedId, field, target));
+    showToast(`已应用到 ${result.updated_count} 条策略`);
+    for (const refreshScope of policyState.policyBatchRefreshScopes(target)) await reloadPolicies(refreshScope);
+  } catch (error) { setPolicyBucket(sourceScope, { ...activePolicyBucket(), error: error.message || "批量应用失败" }); throw error;
+  } finally { setPolicyBucket(sourceScope, { ...activePolicyBucket(sourceScope), applying: false }); if (state.policyScope === sourceScope) renderPolicyManager(); }
 }
 
 async function deletePolicy() {
@@ -1079,6 +1104,12 @@ function bindEvents() {
     });
     renderPolicyManager();
   });
+  const addPolicyList = (field, input, error) => { try { setPolicyBucket(state.policyScope, policyState.addPolicyListItem(activePolicyBucket(), field, input.value)); input.value = ""; error.textContent = ""; renderPolicyManager(); } catch (e) { error.textContent = e.message || "添加失败"; } };
+  els.policyCustomTermAddBtn?.addEventListener("click", () => addPolicyList("custom_terms", els.policyCustomTermInput, els.policyCustomTermError));
+  els.policyIllustIdAddBtn?.addEventListener("click", () => addPolicyList("blacklisted_illust_ids", els.policyIllustIdInput, els.policyIllustIdError));
+  document.querySelectorAll("[data-policy-field][data-policy-target]").forEach((button) => button.addEventListener("click", async () => {
+    try { await applyPolicyField(button.dataset.policyField, button.dataset.policyTarget); } catch (error) { showToast(error.message || "批量应用失败", "error"); }
+  }));
   els.policyAddBtn?.addEventListener("click", () => {
     els.policyAddInput.value = "";
     els.policyAddError.textContent = "";

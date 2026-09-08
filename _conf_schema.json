@@ -304,6 +304,16 @@
             "type": "bool",
             "default": true
           },
+          "custom_terms": {
+            "description": "群聊策略独立自定义屏蔽词（独立规则模式生效）",
+            "type": "list",
+            "default": []
+          },
+          "blacklisted_illust_ids": {
+            "description": "群聊策略独立作品 ID 黑名单（独立规则模式生效）",
+            "type": "list",
+            "default": []
+          },
           "updated_at": {
             "description": "保存时间",
             "type": "string",
@@ -345,6 +355,16 @@
             "description": "启用内置安全词",
             "type": "bool",
             "default": true
+          },
+          "custom_terms": {
+            "description": "私聊策略独立自定义屏蔽词（独立规则模式生效）",
+            "type": "list",
+            "default": []
+          },
+          "blacklisted_illust_ids": {
+            "description": "私聊策略独立作品 ID 黑名单（独立规则模式生效）",
+            "type": "list",
+            "default": []
           },
           "updated_at": {
             "description": "保存时间",

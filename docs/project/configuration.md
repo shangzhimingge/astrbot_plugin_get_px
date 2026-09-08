@@ -78,3 +78,8 @@
 - 签到主题价格可配置为 0–5000，设为 0 时仍需完成一次免费购买。
 - `checkin_greeting_ai_prompt` 是用户自定义部分，系统固定约束通过代码提供。
 - `checkin_greeting_hitokoto_categories` 选择"全部"或不选择时从全部分类随机。
+### 会话策略独立安全列表
+
+每个群聊或私聊策略可保存独立自定义屏蔽词与作品 ID 黑名单。内置安全词开启时使用内置词及内容安全页全局列表并忽略独立列表；关闭时仅使用当前会话独立列表。`POST content-safety/policies/apply-field` 可将单字段复制到现有群聊、私聊或全部策略，单次保存并失败回滚。
+
+请求示例：`{"source_scope":"group","source_id":"10001","field":"custom_terms","target":"all"}`；成功响应包含 `updated_count`、`group_updated_count`、`private_updated_count`。仅更新已有记录，不创建模板；事务失败时配置与运行时快照原位恢复。

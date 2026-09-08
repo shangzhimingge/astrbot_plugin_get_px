@@ -83,3 +83,8 @@ python -m pytest -q
 每次搜索、签到背景选择、日历背景或已保存在线背景恢复时，入口只解析一次不可变 `ContentSafetyPolicy`，随后传给 Lolicon 取源、Pixiv 回退、本地候选过滤和最终复核。群消息只查询群 ID，私聊只查询发送者用户 ID；缺失记录、无效 ID 或读取异常均使用严格策略，且不跨作用域回退。管理页黑名单缩略图没有会话上下文，因此始终采用严格策略。
 
 会话策略服务隔离群聊与私聊命名空间，缓存身份同时包含会话类型和标识。
+### 内容安全策略来源
+
+`SessionSafetyService` 持久化策略列表并生成不可变 `ContentSafetyPolicy` 快照；快照缓存身份包含两份独立列表。`FiltersMixin` 根据 `builtin_terms_enabled` 在全局规则源与会话独立规则源之间互斥选择。
+
+调用链为 `SessionSafetyService → ContentSafetyPolicy → FiltersMixin → cache key`；批量操作先构造双 scope 候选，单次保存成功后安装运行时，异常时回滚配置列表、迁移标记和两份运行时快照。

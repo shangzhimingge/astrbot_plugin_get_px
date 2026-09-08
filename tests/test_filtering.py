@@ -2,6 +2,7 @@ import asyncio
 import sys
 import unittest
 import tempfile
+import pytest
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
@@ -9,6 +10,45 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from astrbot_plugin_get_px.pixiv.filters import FiltersMixin
 from astrbot_plugin_get_px.pixiv.index import ImageIndexStore
 from astrbot_plugin_get_px.pixiv.safety import ContentSafetyPolicy
+
+@pytest.mark.asyncio
+async def test_global_mode_reads_global_and_ignores_independent(tmp_path):
+    class Spy:
+        async def get_custom_safety_terms(self): return {"global"}
+        async def get_blacklisted_illust_ids(self): return {"9"}
+    m=object.__new__(FiltersMixin); m.image_index=Spy(); p=ContentSafetyPolicy(builtin_terms_enabled=True,custom_terms=("local",),blacklisted_illust_ids=("8",)); assert await m._blocked_query_term("global",p)
+
+@pytest.mark.asyncio
+async def test_independent_mode_avoids_global_reads():
+    class Spy:
+        async def get_custom_safety_terms(self): raise AssertionError
+        async def get_blacklisted_illust_ids(self): raise AssertionError
+        async def is_blacklisted(self,_): raise AssertionError
+    m=object.__new__(FiltersMixin); m.image_index=Spy(); p=ContentSafetyPolicy(builtin_terms_enabled=False,custom_terms=("local",),blacklisted_illust_ids=("8",)); assert await m._blocked_query_term("local",p)
+
+@pytest.mark.asyncio
+async def test_independent_id_and_pid_filtering():
+    m=object.__new__(FiltersMixin); m.image_index=None; p=ContentSafetyPolicy(builtin_terms_enabled=False,blacklisted_illust_ids=("8",)); out=await m._filter_blacklisted_illusts([{"id":"8"},{"pid":"8"},{"id":"1"}],p); assert len(out)==1
+
+@pytest.mark.asyncio
+async def test_blacklist_reads_global_only_in_on_mode():
+    class Spy:
+        def __init__(self): self.calls = []
+        async def get_blacklisted_illust_ids(self): self.calls.append("ids"); return {"9"}
+        async def get_custom_safety_terms(self): self.calls.append("terms"); return set()
+    spy = Spy(); mixin = object.__new__(FiltersMixin); mixin.image_index = spy
+    items = [{"id": "9", "x_restrict": 0, "title": "safe", "tags": []}, {"id": "8", "x_restrict": 0, "title": "safe", "tags": []}]
+    assert [x["id"] for x in await mixin._filter_blacklisted_illusts(items, ContentSafetyPolicy(builtin_terms_enabled=True, blacklisted_illust_ids=("8",)))] == ["8"]
+    assert spy.calls == ["terms", "ids"]
+    spy.calls.clear()
+    assert [x["id"] for x in await mixin._filter_blacklisted_illusts(items, ContentSafetyPolicy(builtin_terms_enabled=False, blacklisted_illust_ids=("8",)))] == ["9"]
+    assert spy.calls == []
+
+def test_content_safety_policy_copies_mutable_inputs():
+    terms, ids = ["alpha"], ["1"]
+    policy = ContentSafetyPolicy(custom_terms=terms, blacklisted_illust_ids=ids)
+    terms.append("beta"); ids.append("2")
+    assert policy.custom_terms == ("alpha",) and policy.blacklisted_illust_ids == ("1",)
 
 
 class FilteringTest(unittest.TestCase):
@@ -60,16 +100,16 @@ class SafetyFilteringTest(unittest.IsolatedAsyncioTestCase):
             finally:
                 mixin.image_index.close()
 
-    async def test_group_switches_do_not_disable_custom_terms_or_id_blacklist(self):
+    async def test_independent_lists_replace_global_terms_and_id_blacklist(self):
         with tempfile.TemporaryDirectory() as tmp:
             mixin = object.__new__(FiltersMixin)
             mixin.image_index = ImageIndexStore(tmp)
             try:
-                await mixin.image_index.add_safety_term("customblocked", added_by="test")
-                await mixin.image_index.add_blacklist_illust(illust_id="99")
                 policy = ContentSafetyPolicy(
                     general_only_enabled=False,
                     builtin_terms_enabled=False,
+                    custom_terms=("customblocked",),
+                    blacklisted_illust_ids=("99",),
                 )
                 self.assertFalse(await mixin._blocked_query_term("guro", policy))
                 self.assertTrue(

@@ -26,6 +26,16 @@ def test_plugin_center_page_exposes_management_workspaces() -> None:
     assert "imageHistory" not in html
     assert "cacheStats" not in html
     assert "schema v6" in html
+    for element_id in ("policyRuleModeStatus", "policyCustomTermInput", "policyCustomTermAddBtn", "policyCustomTermList", "policyIllustIdInput", "policyIllustIdAddBtn", "policyIllustIdList"):
+        assert f'id="{element_id}"' in html
+    assert html.index('id="policyBuiltinToggle"') < html.index('id="policyRuleModeStatus"')
+    assert html.count('data-policy-field="custom_terms"') == 3
+    assert html.count('data-policy-field="blacklisted_illust_ids"') == 3
+    assert 'id="policyBatchStatus"' in html and 'aria-live="polite"' in html
+    app = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
+    assert "async function applyPolicyField" in app
+    assert "content-safety/policies/apply-field" in app
+    assert "请先保存当前修改再批量应用。" in app
 
 
 def test_plugin_center_import_accepts_json_backups_only() -> None:
@@ -100,6 +110,13 @@ def test_policy_state_module_drives_real_selection_and_crud_paths():
     assert "policyState.removePolicyRecord(" in delete_body
     assert all("finally" in body for body in (reload_body, add_body, save_body, delete_body))
 
+def test_policy_batch_uses_executable_state_helpers():
+    source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
+    body = _function_body(source, "applyPolicyField")
+    assert "policyState.buildPolicyBatchRequest(" in body
+    assert "policyState.policyBatchRefreshScopes(" in body
+    assert "await reloadPolicies(refreshScope)" in body
+
 
 def test_policy_switches_use_reachable_dirty_confirmation():
     source = (PAGE_DIR / "app.js").read_text(encoding="utf-8")
@@ -126,6 +143,9 @@ def test_policy_render_updates_dynamic_copy_aria_and_busy_controls():
         'setAttribute("aria-busy"',
     ):
         assert token in body
+    assert "control.disabled = busy" in body
+    assert 'setAttribute("aria-busy", String(busy))' in body
+    assert "busy || dirty || !draft" in body
 
 
 def test_policy_frontend_has_no_legacy_mirror_or_contract_comments():

@@ -98,6 +98,7 @@ class PluginWebApi:
             ("content-safety/private-policy", self.content_safety_private_policy, ["POST"], "Update a private content safety policy"),
             ("content-safety/private-policies", self.content_safety_private_policies, ["GET"], "List private content safety policies"),
             ("content-safety/private-policy/remove", self.content_safety_private_policy_remove, ["POST"], "Remove a private content safety policy"),
+            ("content-safety/policies/apply-field", self.content_safety_policy_apply_field, ["POST"], "Apply one session policy field"),
             (
                 "content-safety/terms/add",
                 self.content_safety_term_add,
@@ -386,8 +387,11 @@ class PluginWebApi:
         }
         if not required.issubset(payload):
             return jsonify({"success": False, "error": "缺少群策略必填字段"}), 400
+        for field in ("custom_terms", "blacklisted_illust_ids"):
+            if field in payload and not isinstance(payload[field], list):
+                return jsonify({"success": False, "error": f"{field} 必须是数组"}), 400
         try:
-            policy = await service.upsert_policy(payload["group_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], updated_by="web")
+            policy = await service.upsert_policy(payload["group_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], custom_terms=payload.get("custom_terms"), blacklisted_illust_ids=payload.get("blacklisted_illust_ids"), updated_by="web")
             return jsonify({"success": True, "group_policy": policy})
         except ValueError as exc:
             return jsonify({"success": False, "error": str(exc)}), 400
@@ -418,7 +422,9 @@ class PluginWebApi:
         required = {"user_id", "general_only_enabled", "builtin_terms_enabled"}
         if payload is None or not required.issubset(payload): return jsonify({"success": False, "error": "缺少私聊策略必填字段"}), 400
         if type(payload["general_only_enabled"]) is not bool or type(payload["builtin_terms_enabled"]) is not bool: return jsonify({"success": False, "error": "策略开关必须是布尔值"}), 400
-        try: return jsonify({"success": True, "private_policy": await service.upsert_private_policy(payload["user_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], updated_by="web")})
+        for field in ("custom_terms", "blacklisted_illust_ids"):
+            if field in payload and not isinstance(payload[field], list): return jsonify({"success": False, "error": f"{field} 必须是数组"}), 400
+        try: return jsonify({"success": True, "private_policy": await service.upsert_private_policy(payload["user_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], custom_terms=payload.get("custom_terms"), blacklisted_illust_ids=payload.get("blacklisted_illust_ids"), updated_by="web")})
         except ValueError as exc: return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc: return self.internal_error("更新私聊内容安全策略", exc)
 
@@ -438,6 +444,20 @@ class PluginWebApi:
             return jsonify({"success": True, "removed": removed, "private_policy": policy})
         except ValueError as exc: return jsonify({"success": False, "error": str(exc)}), 400
         except Exception as exc: return self.internal_error("删除私聊内容安全策略", exc)
+
+    async def content_safety_policy_apply_field(self):
+        service = getattr(self.plugin, "group_safety_service", None)
+        if service is None: return self._unavailable("群内容安全设置尚未初始化")
+        payload = await self._request_json_object()
+        required = {"source_scope", "source_id", "field", "target"}
+        if payload is None or not required.issubset(payload):
+            return jsonify({"success": False, "error": "缺少批量应用必填字段"}), 400
+        try:
+            result = await service.apply_policy_field(payload["source_scope"], payload["source_id"], payload["field"], payload["target"], updated_by="web")
+            return jsonify({"success": True, **result})
+        except LookupError as exc: return jsonify({"success": False, "error": str(exc)}), 404
+        except ValueError as exc: return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc: return self.internal_error("批量应用内容安全策略", exc)
 
     async def content_safety_term_add(self):
         if self.plugin.image_index is None:

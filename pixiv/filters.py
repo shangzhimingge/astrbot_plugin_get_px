@@ -13,6 +13,7 @@ from .safety import (
     illustration_texts,
     match_safety_term,
     normalized_builtin_terms,
+    normalize_safety_text,
 )
 
 
@@ -62,7 +63,9 @@ class FiltersMixin:
             builtin_terms = value["builtin_terms_enabled"]
             if type(general_only) is not bool or type(builtin_terms) is not bool:
                 raise ValueError("invalid group content-safety values")
-            return ContentSafetyPolicy(general_only, builtin_terms, **identity)
+            custom_terms = value.get("custom_terms", [])
+            blacklisted_ids = value.get("blacklisted_illust_ids", [])
+            return ContentSafetyPolicy(general_only, builtin_terms, **identity, custom_terms=tuple(custom_terms), blacklisted_illust_ids=tuple(blacklisted_ids))
         except Exception as exc:
             logged_group_id = (
                 group_id.replace("\r", "\\r").replace("\n", "\\n")[:128]
@@ -80,8 +83,10 @@ class FiltersMixin:
         terms = (
             set(normalized_builtin_terms())
             if policy.builtin_terms_enabled
-            else set()
+            else {normalize_safety_text(term) for term in policy.custom_terms}
         )
+        if not policy.builtin_terms_enabled:
+            return terms
         if self.image_index is None:
             return terms
         try:
@@ -90,6 +95,17 @@ class FiltersMixin:
             logger.error(f"{LOG_PREFIX} 读取自定义安全词失败: {type(exc).__name__}")
             raise RuntimeError("内容安全服务暂不可用") from exc
         return terms
+
+    async def _blacklisted_illust_ids(self, policy=STRICT_CONTENT_SAFETY_POLICY) -> set[str]:
+        if not policy.builtin_terms_enabled:
+            return set(policy.blacklisted_illust_ids)
+        if self.image_index is None:
+            return set()
+        try:
+            return set(await self.image_index.get_blacklisted_illust_ids())
+        except Exception as exc:
+            logger.error(f"{LOG_PREFIX} 读取图片黑名单失败: {type(exc).__name__}")
+            raise RuntimeError("内容安全服务暂不可用") from exc
 
     async def _blocked_query_term(
         self,
@@ -122,8 +138,9 @@ class FiltersMixin:
         )
         if matched_tag:
             return f"作品 {illust_id or '-'} 命中内容安全词 {matched_tag}"
+        blacklisted_ids = await self._blacklisted_illust_ids(policy)
         for candidate_id in self._illust_blacklist_ids(illust, illust_id):
-            if await self._is_blacklisted_illust(candidate_id):
+            if candidate_id in blacklisted_ids:
                 return f"作品 {illust_id} 已在黑名单中"
         return ""
 
@@ -157,13 +174,7 @@ class FiltersMixin:
         if not illusts:
             return illusts
         safety_terms = await self._safety_terms(policy)
-        blacklisted: set[str] = set()
-        try:
-            if self.image_index is not None:
-                blacklisted = await self.image_index.get_blacklisted_illust_ids()
-        except Exception as exc:
-            logger.error(f"{LOG_PREFIX} 读取图片黑名单失败: {type(exc).__name__}")
-            raise RuntimeError("内容安全服务暂不可用") from exc
+        blacklisted = await self._blacklisted_illust_ids(policy)
         return [
             illust
             for illust in illusts

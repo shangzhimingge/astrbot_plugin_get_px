@@ -13,6 +13,26 @@ class ContentSafetyPolicy:
     builtin_terms_enabled: bool = True
     group_id: str = ""
     user_id: str = ""
+    custom_terms: tuple[str, ...] = ()
+    blacklisted_illust_ids: tuple[str, ...] = ()
+
+    def __post_init__(self):
+        if not isinstance(self.custom_terms, (list, tuple)) or not isinstance(self.blacklisted_illust_ids, (list, tuple)):
+            raise ValueError("independent safety lists must be arrays")
+        terms_by_key = {}
+        for index, value in enumerate(self.custom_terms):
+            if not isinstance(value, str) or not value.strip() or not normalize_safety_text(value.strip()):
+                raise ValueError(f"custom_terms[{index}] is invalid")
+            display = value.strip(); terms_by_key.setdefault(normalize_safety_text(display), display)
+        terms = [terms_by_key[key] for key in sorted(terms_by_key, key=lambda k: (k, terms_by_key[k]))]
+        ids = set()
+        for index, value in enumerate(self.blacklisted_illust_ids):
+            if not isinstance(value, str) or not value.strip().isdigit() or int(value.strip()) <= 0:
+                raise ValueError(f"blacklisted_illust_ids[{index}] is invalid")
+            ids.add(str(int(value.strip())))
+        ids = sorted(ids, key=int)
+        object.__setattr__(self, "custom_terms", tuple(terms))
+        object.__setattr__(self, "blacklisted_illust_ids", tuple(ids))
 
     def cache_identity(self) -> dict[str, object]:
         return {
@@ -21,6 +41,8 @@ class ContentSafetyPolicy:
             "user_id": self.user_id,
             "general_only_enabled": self.general_only_enabled,
             "builtin_terms_enabled": self.builtin_terms_enabled,
+            "custom_terms": list(self.custom_terms),
+            "blacklisted_illust_ids": list(self.blacklisted_illust_ids),
         }
 
 

@@ -52,6 +52,15 @@ _BASE_RECORD = CheckinRecord(
     updated_at="",
 )
 
+def test_cache_identity_contains_independent_safety_lists():
+    base = ContentSafetyPolicy(group_id="g1", builtin_terms_enabled=False, custom_terms=["Alpha"], blacklisted_illust_ids=["1"]).cache_identity()
+    terms = ContentSafetyPolicy(group_id="g1", builtin_terms_enabled=False, custom_terms=["Beta"], blacklisted_illust_ids=["1"]).cache_identity()
+    ids = ContentSafetyPolicy(group_id="g1", builtin_terms_enabled=False, custom_terms=["Alpha"], blacklisted_illust_ids=["2"]).cache_identity()
+    assert base["custom_terms"] == ["Alpha"] and base["blacklisted_illust_ids"] == ["1"]
+    assert base != terms and base != ids
+    equivalent = ContentSafetyPolicy(group_id="g1", builtin_terms_enabled=False, custom_terms=[" Alpha ", "alpha"], blacklisted_illust_ids=["001", "1"]).cache_identity()
+    assert equivalent == base
+
 
 def _record(date_key: str, coins_reward: int) -> CheckinRecord:
     return replace(_BASE_RECORD, date_key=date_key, coins_reward=coins_reward)
@@ -847,6 +856,18 @@ def test_calendar_cache_separates_relaxed_group_from_private_chat(tmp_path) -> N
         _FakeEvent(),
         ContentSafetyPolicy(),
     )
+
+def test_calendar_cache_misses_when_only_custom_terms_change(tmp_path) -> None:
+    first = ContentSafetyPolicy(False, False, "group-a", custom_terms=("alpha",), blacklisted_illust_ids=("1",))
+    second = ContentSafetyPolicy(False, False, "group-a", custom_terms=("beta",), blacklisted_illust_ids=("1",))
+    _assert_calendar_policy_transition_invalidates_cache(tmp_path, _FakeEvent(group_id="group-a"), first, _FakeEvent(group_id="group-a"), second)
+    assert first.cache_identity()["custom_terms"] != second.cache_identity()["custom_terms"]
+
+def test_calendar_cache_misses_when_only_blacklisted_ids_change(tmp_path) -> None:
+    first = ContentSafetyPolicy(False, False, "group-a", custom_terms=("alpha",), blacklisted_illust_ids=("1",))
+    second = ContentSafetyPolicy(False, False, "group-a", custom_terms=("alpha",), blacklisted_illust_ids=("2",))
+    _assert_calendar_policy_transition_invalidates_cache(tmp_path, _FakeEvent(group_id="group-a"), first, _FakeEvent(group_id="group-a"), second)
+    assert first.cache_identity()["blacklisted_illust_ids"] != second.cache_identity()["blacklisted_illust_ids"]
 
 
 class _FailingEventStore(_CalendarStore):

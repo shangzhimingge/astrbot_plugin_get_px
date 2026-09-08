@@ -56,6 +56,7 @@ class GroupPolicyHarness:
         self.app.add_url_rule("/content-safety/private-policy", view_func=self.api.content_safety_private_policy, methods=["POST"])
         self.app.add_url_rule("/content-safety/private-policies", view_func=self.api.content_safety_private_policies, methods=["GET"])
         self.app.add_url_rule("/content-safety/private-policy/remove", view_func=self.api.content_safety_private_policy_remove, methods=["POST"])
+        self.app.add_url_rule("/content-safety/policies/apply-field", view_func=self.api.content_safety_policy_apply_field, methods=["POST"])
 
 
 @pytest.fixture
@@ -66,6 +67,59 @@ def group_policy_harness():
             yield harness
         finally:
             harness.plugin.image_index.close()
+
+
+@pytest.mark.asyncio
+async def test_apply_field_quart_contract(group_policy_harness):
+    h = group_policy_harness
+    await h.plugin.group_safety_service.upsert_group_policy("g1", general_only_enabled=True, builtin_terms_enabled=False, custom_terms=[" Alpha "], blacklisted_illust_ids=["001"])
+    client = h.app.test_client()
+    response = await client.post("/content-safety/policies/apply-field", json={"source_scope":"group","source_id":"g1","field":"custom_terms","target":"group"})
+    assert response.status_code == 200
+    assert (await response.get_json())["updated_count"] == 0
+
+@pytest.mark.asyncio
+async def test_policy_crud_round_trip_lists(group_policy_harness):
+    c=group_policy_harness.app.test_client(); r=await c.post("/content-safety/group-policy",json={"group_id":"g2","general_only_enabled":True,"builtin_terms_enabled":False,"custom_terms":["x"],"blacklisted_illust_ids":["001"]}); assert r.status_code==200; assert (await r.get_json())["group_policy"]["custom_terms"]==["x"]
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("endpoint,identifier", [("/content-safety/group-policy", "group_id"), ("/content-safety/private-policy", "user_id")])
+@pytest.mark.parametrize("field", ["custom_terms", "blacklisted_illust_ids"])
+async def test_policy_api_requires_arrays_when_list_fields_are_present(group_policy_harness, endpoint, identifier, field):
+    payload = {identifier: "target", "general_only_enabled": True, "builtin_terms_enabled": True, field: None}
+    response = await group_policy_harness.app.test_client().post(endpoint, json=payload)
+    assert response.status_code == 400
+    assert field in (await response.get_json())["error"]
+
+@pytest.mark.asyncio
+async def test_apply_field_targets_all_existing(group_policy_harness):
+    s=group_policy_harness.plugin.group_safety_service; await s.upsert_group_policy("g1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=["x"],blacklisted_illust_ids=[]); await s.upsert_private_policy("u1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=[],blacklisted_illust_ids=[])
+    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"group","source_id":"g1","field":"custom_terms","target":"all"}); assert r.status_code==200 and (await r.get_json())["updated_count"]==1
+
+@pytest.mark.asyncio
+async def test_apply_field_all_save_failure_returns_500_and_restores_both_scopes(group_policy_harness):
+    service = group_policy_harness.plugin.group_safety_service
+    await service.upsert_group_policy("g1", general_only_enabled=True, builtin_terms_enabled=True, custom_terms=["source"], blacklisted_illust_ids=["1"])
+    await service.upsert_private_policy("u1", general_only_enabled=False, builtin_terms_enabled=False, custom_terms=["old"], blacklisted_illust_ids=["2"])
+    before_group = await service.list_policies(); before_private = await service.list_private_policies(); before_config = {k: [dict(x) for x in group_policy_harness.plugin.config.get(k, [])] for k in ("group_content_safety_policies", "private_content_safety_policies")}
+    group_policy_harness.plugin.config.fail_next = True
+    response = await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field", json={"source_scope":"group", "source_id":"g1", "field":"custom_terms", "target":"all"})
+    assert response.status_code == 500
+    assert await service.list_policies() == before_group and await service.list_private_policies() == before_private
+    assert {k: [dict(x) for x in group_policy_harness.plugin.config.get(k, [])] for k in before_config} == before_config
+
+@pytest.mark.asyncio
+async def test_apply_field_bad_source_returns_404(group_policy_harness):
+    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"group","source_id":"missing","field":"custom_terms","target":"all"}); assert r.status_code==404
+
+@pytest.mark.asyncio
+async def test_apply_field_invalid_returns_400(group_policy_harness):
+    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"x","source_id":"1","field":"custom_terms","target":"all"}); assert r.status_code==400
+
+@pytest.mark.asyncio
+async def test_policy_service_unavailable_returns_503(group_policy_harness):
+    group_policy_harness.plugin.group_safety_service=None
+    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={}); assert r.status_code==503
 
 
 class FakePixivClient:

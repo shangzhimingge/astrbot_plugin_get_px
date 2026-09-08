@@ -21,7 +21,23 @@ export const POLICY_SCOPES = Object.freeze({
   }),
 });
 
-const copyRecord = (record) => (record ? { ...record } : null);
+export function buildPolicyBatchRequest(sourceScope, sourceId, field, target) {
+  if (!POLICY_SCOPES[sourceScope] || !["custom_terms", "blacklisted_illust_ids"].includes(field) || !["group", "private", "all"].includes(target)) {
+    throw new Error("无效的策略批量参数");
+  }
+  return { source_scope: sourceScope, source_id: String(sourceId ?? "").trim(), field, target };
+}
+
+export function policyBatchRefreshScopes(target) {
+  return target === "all" ? ["group", "private"] : target === "group" || target === "private" ? [target] : [];
+}
+
+const normalizeTerm = (value) => String(value ?? "").normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/[\s_\-‐‑‒–—―·・.]+/gu, "");
+const copyRecord = (record) => (record ? {
+  ...record,
+  custom_terms: [...(record.custom_terms || [])],
+  blacklisted_illust_ids: [...(record.blacklisted_illust_ids || [])],
+} : null);
 
 export function createPolicyBucket(scope = "group") {
   if (!POLICY_SCOPES[scope]) throw new Error(`Unknown policy scope: ${scope}`);
@@ -37,6 +53,7 @@ export function createPolicyBucket(scope = "group") {
     deleting: false,
     loaded: false,
     error: "",
+    applying: false,
   };
 }
 
@@ -52,6 +69,8 @@ function comparable(scope, record) {
     id: policyRecordId(scope, record),
     generalOnly: record.general_only_enabled === true,
     builtinTerms: record.builtin_terms_enabled === true,
+    customTerms: [...(record.custom_terms || [])],
+    blacklistedIllustIds: [...(record.blacklisted_illust_ids || [])],
   };
 }
 
@@ -121,4 +140,24 @@ export function removePolicyRecord(bucket, scope, id) {
 
 export function discardPolicyDraft(bucket) {
   return { ...bucket, draft: copyRecord(bucket.baseline), error: "" };
+}
+
+export function addPolicyListItem(bucket, field, value) {
+  if (!["custom_terms", "blacklisted_illust_ids"].includes(field)) throw new Error("不支持的策略列表");
+  const item = String(value ?? "").trim();
+  if (field === "custom_terms" && !normalizeTerm(item)) throw new Error("屏蔽词不能为空");
+  if (field === "blacklisted_illust_ids" && (!/^\d+$/.test(item) || Number(item) <= 0)) throw new Error("作品 ID 必须是正整数");
+  const normalized = field === "blacklisted_illust_ids" ? String(Number(item)) : item;
+  const draft = copyRecord(bucket.draft); const values = [...(draft[field] || [])];
+  if (field === "custom_terms" && values.some(v => normalizeTerm(v) === normalizeTerm(normalized))) throw new Error("列表中已存在该项目");
+  if (values.includes(normalized)) throw new Error("列表中已存在该项目");
+  values.push(normalized); values.sort(field === "blacklisted_illust_ids" ? (a,b)=>Number(a)-Number(b) : (a,b)=>normalizeTerm(a).localeCompare(normalizeTerm(b), "zh-CN") || a.localeCompare(b, "zh-CN")); draft[field] = values;
+  return { ...bucket, draft };
+}
+
+export function removePolicyListItem(bucket, field, index) {
+  if (!["custom_terms", "blacklisted_illust_ids"].includes(field)) throw new Error("不支持的策略列表");
+  const draft = copyRecord(bucket.draft); const values = [...(draft[field] || [])];
+  if (!Number.isInteger(index) || index < 0 || index >= values.length) throw new Error("列表项目不存在");
+  values.splice(index, 1); draft[field] = values; return { ...bucket, draft };
 }
