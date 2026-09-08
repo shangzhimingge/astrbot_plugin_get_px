@@ -23,7 +23,8 @@ class ContentSafetyPolicy:
         for index, value in enumerate(self.custom_terms):
             if not isinstance(value, str) or not value.strip() or not normalize_safety_text(value.strip()):
                 raise ValueError(f"custom_terms[{index}] is invalid")
-            display = value.strip(); terms_by_key.setdefault(normalize_safety_text(display), display)
+            display = value.strip()
+            terms_by_key.setdefault(normalize_safety_text(display), display)
         terms = [terms_by_key[key] for key in sorted(terms_by_key, key=lambda k: (k, terms_by_key[k]))]
         ids = set()
         for index, value in enumerate(self.blacklisted_illust_ids):

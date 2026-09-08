@@ -55,27 +55,32 @@ class FailOnceConfig(Config):
 
 @pytest.mark.asyncio
 async def test_independent_lists_tolerant_warning_and_strict_invalid_matrix(monkeypatch):
-    messages=[]; monkeypatch.setattr("group_safety.logger.warning", messages.append)
+    messages=[]
+    monkeypatch.setattr("group_safety.logger.warning", messages.append)
     entries, warnings = normalize_policy_entries([{"group_id":"g1","general_only_enabled":True,"builtin_terms_enabled":False,"custom_terms":[" Alpha ","alpha",3],"blacklisted_illust_ids":["001","0","2.5"]}])
     assert entries[0]["custom_terms"] == ["Alpha"] and entries[0]["blacklisted_illust_ids"] == ["1"] and warnings
     service=GroupSafetyService(Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:False}))
     for field,value in [("custom_terms",[3]),("blacklisted_illust_ids",["0"]),("blacklisted_illust_ids",["2.5"])]:
-        with pytest.raises(ValueError): await service.upsert_group_policy("g1", general_only_enabled=True,builtin_terms_enabled=False,**{field:value})
+        with pytest.raises(ValueError):
+            await service.upsert_group_policy("g1", general_only_enabled=True,builtin_terms_enabled=False,**{field:value})
 
 @pytest.mark.asyncio
 async def test_apply_policy_field_group_private_all_counts_and_only_field():
-    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True}); s=GroupSafetyService(c)
+    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True})
+    s=GroupSafetyService(c)
     await s.upsert_group_policy("g1",general_only_enabled=True,builtin_terms_enabled=False,custom_terms=["a"],blacklisted_illust_ids=["1"])
     await s.upsert_group_policy("g2",general_only_enabled=False,builtin_terms_enabled=True,custom_terms=[],blacklisted_illust_ids=["2"])
     await s.upsert_private_policy("u1",general_only_enabled=False,builtin_terms_enabled=True,custom_terms=[],blacklisted_illust_ids=["3"])
-    result=await s.apply_policy_field("group","g1","custom_terms","all"); assert result["updated_count"]==2
+    result=await s.apply_policy_field("group","g1","custom_terms","all")
+    assert result["updated_count"]==2
     assert (await s.get_private_policy("u1"))["custom_terms"]==["a"]
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("field,value,other", [("custom_terms", ["b"], ["1"]), ("blacklisted_illust_ids", ["9"], ["a"])])
 @pytest.mark.parametrize("target,expected", [("group", (1, 0)), ("private", (0, 1)), ("all", (1, 1))])
 async def test_apply_policy_field_each_scope_preserves_other_fields_and_metadata(field, value, other, target, expected):
-    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True}); s=GroupSafetyService(c)
+    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True})
+    s=GroupSafetyService(c)
     await s.upsert_group_policy("g1",general_only_enabled=False,builtin_terms_enabled=False,custom_terms=(value if field == "custom_terms" else ["old"]),blacklisted_illust_ids=(value if field == "blacklisted_illust_ids" else ["2"]))
     await s.upsert_group_policy("g2",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=["z"],blacklisted_illust_ids=["3"])
     await s.upsert_private_policy("u1",general_only_enabled=False,builtin_terms_enabled=True,custom_terms=["p"],blacklisted_illust_ids=["4"])
@@ -90,16 +95,22 @@ async def test_apply_policy_field_each_scope_preserves_other_fields_and_metadata
 
 @pytest.mark.asyncio
 async def test_apply_policy_field_zero_change_skips_save_and_rollback_identity():
-    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True}); s=GroupSafetyService(c)
+    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True})
+    s=GroupSafetyService(c)
     await s.upsert_group_policy("g1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=["a"],blacklisted_illust_ids=[])
     await s.upsert_private_policy("u1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=[],blacklisted_illust_ids=[])
-    group_ref=c[CONFIG_KEY]; private_ref=c[PRIVATE_CONFIG_KEY]; before=deepcopy(c[CONFIG_KEY]); c["fail"]=True
-    with pytest.raises(RuntimeError): await s.apply_policy_field("group","g1","custom_terms","all")
+    group_ref=c[CONFIG_KEY]
+    private_ref=c[PRIVATE_CONFIG_KEY]
+    before=deepcopy(c[CONFIG_KEY])
+    c["fail"]=True
+    with pytest.raises(RuntimeError):
+        await s.apply_policy_field("group","g1","custom_terms","all")
     assert c[CONFIG_KEY] is group_ref and c[CONFIG_KEY]==before and c[PRIVATE_CONFIG_KEY] is private_ref
 
 @pytest.mark.asyncio
 async def test_apply_policy_field_true_zero_change_does_not_save():
-    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True}); s=GroupSafetyService(c)
+    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True})
+    s=GroupSafetyService(c)
     await s.upsert_group_policy("g1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=["a"],blacklisted_illust_ids=["1"])
     await s.upsert_private_policy("u1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=["a"],blacklisted_illust_ids=["1"])
     calls = c.save_calls
@@ -110,7 +121,8 @@ async def test_apply_policy_field_true_zero_change_does_not_save():
 @pytest.mark.parametrize("field,source_value", [("custom_terms", ["source"]), ("blacklisted_illust_ids", ["99"])])
 @pytest.mark.parametrize("target,expected_ids", [("group", {"g2"}), ("private", {"u1"}), ("all", {"g2", "u1"})])
 async def test_apply_policy_field_six_cells_preserve_complete_non_targets(field, source_value, target, expected_ids):
-    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True}); s=GroupSafetyService(c)
+    c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True})
+    s=GroupSafetyService(c)
     await s.upsert_group_policy("g1",general_only_enabled=False,builtin_terms_enabled=False,custom_terms=(source_value if field == "custom_terms" else ["g1"]),blacklisted_illust_ids=(source_value if field == "blacklisted_illust_ids" else ["1"]))
     await s.upsert_group_policy("g2",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=["g2"],blacklisted_illust_ids=["2"])
     await s.upsert_private_policy("u1",general_only_enabled=False,builtin_terms_enabled=True,custom_terms=["u1"],blacklisted_illust_ids=["3"])
@@ -121,7 +133,8 @@ async def test_apply_policy_field_six_cells_preserve_complete_non_targets(field,
     after = {"g1": await s.get_group_policy("g1"), "g2": await s.get_group_policy("g2"), "u1": await s.get_private_policy("u1")}
     assert after["g1"] == before["g1"]
     for identifier, record in after.items():
-        if identifier not in expected_ids: assert record == before[identifier]
+        if identifier not in expected_ids:
+            assert record == before[identifier]
         else:
             for key in ("general_only_enabled", "builtin_terms_enabled", "group_id", "user_id", "is_default"):
                 assert record.get(key) == before[identifier].get(key)

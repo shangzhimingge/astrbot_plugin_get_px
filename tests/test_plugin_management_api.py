@@ -80,7 +80,10 @@ async def test_apply_field_quart_contract(group_policy_harness):
 
 @pytest.mark.asyncio
 async def test_policy_crud_round_trip_lists(group_policy_harness):
-    c=group_policy_harness.app.test_client(); r=await c.post("/content-safety/group-policy",json={"group_id":"g2","general_only_enabled":True,"builtin_terms_enabled":False,"custom_terms":["x"],"blacklisted_illust_ids":["001"]}); assert r.status_code==200; assert (await r.get_json())["group_policy"]["custom_terms"]==["x"]
+    c=group_policy_harness.app.test_client()
+    r=await c.post("/content-safety/group-policy",json={"group_id":"g2","general_only_enabled":True,"builtin_terms_enabled":False,"custom_terms":["x"],"blacklisted_illust_ids":["001"]})
+    assert r.status_code==200
+    assert (await r.get_json())["group_policy"]["custom_terms"]==["x"]
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("endpoint,identifier", [("/content-safety/group-policy", "group_id"), ("/content-safety/private-policy", "user_id")])
@@ -93,15 +96,20 @@ async def test_policy_api_requires_arrays_when_list_fields_are_present(group_pol
 
 @pytest.mark.asyncio
 async def test_apply_field_targets_all_existing(group_policy_harness):
-    s=group_policy_harness.plugin.group_safety_service; await s.upsert_group_policy("g1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=["x"],blacklisted_illust_ids=[]); await s.upsert_private_policy("u1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=[],blacklisted_illust_ids=[])
-    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"group","source_id":"g1","field":"custom_terms","target":"all"}); assert r.status_code==200 and (await r.get_json())["updated_count"]==1
+    s=group_policy_harness.plugin.group_safety_service
+    await s.upsert_group_policy("g1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=["x"],blacklisted_illust_ids=[])
+    await s.upsert_private_policy("u1",general_only_enabled=True,builtin_terms_enabled=True,custom_terms=[],blacklisted_illust_ids=[])
+    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"group","source_id":"g1","field":"custom_terms","target":"all"})
+    assert r.status_code==200 and (await r.get_json())["updated_count"]==1
 
 @pytest.mark.asyncio
 async def test_apply_field_all_save_failure_returns_500_and_restores_both_scopes(group_policy_harness):
     service = group_policy_harness.plugin.group_safety_service
     await service.upsert_group_policy("g1", general_only_enabled=True, builtin_terms_enabled=True, custom_terms=["source"], blacklisted_illust_ids=["1"])
     await service.upsert_private_policy("u1", general_only_enabled=False, builtin_terms_enabled=False, custom_terms=["old"], blacklisted_illust_ids=["2"])
-    before_group = await service.list_policies(); before_private = await service.list_private_policies(); before_config = {k: [dict(x) for x in group_policy_harness.plugin.config.get(k, [])] for k in ("group_content_safety_policies", "private_content_safety_policies")}
+    before_group = await service.list_policies()
+    before_private = await service.list_private_policies()
+    before_config = {k: [dict(x) for x in group_policy_harness.plugin.config.get(k, [])] for k in ("group_content_safety_policies", "private_content_safety_policies")}
     group_policy_harness.plugin.config.fail_next = True
     response = await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field", json={"source_scope":"group", "source_id":"g1", "field":"custom_terms", "target":"all"})
     assert response.status_code == 500
@@ -110,16 +118,19 @@ async def test_apply_field_all_save_failure_returns_500_and_restores_both_scopes
 
 @pytest.mark.asyncio
 async def test_apply_field_bad_source_returns_404(group_policy_harness):
-    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"group","source_id":"missing","field":"custom_terms","target":"all"}); assert r.status_code==404
+    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"group","source_id":"missing","field":"custom_terms","target":"all"})
+    assert r.status_code==404
 
 @pytest.mark.asyncio
 async def test_apply_field_invalid_returns_400(group_policy_harness):
-    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"x","source_id":"1","field":"custom_terms","target":"all"}); assert r.status_code==400
+    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={"source_scope":"x","source_id":"1","field":"custom_terms","target":"all"})
+    assert r.status_code==400
 
 @pytest.mark.asyncio
 async def test_policy_service_unavailable_returns_503(group_policy_harness):
     group_policy_harness.plugin.group_safety_service=None
-    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={}); assert r.status_code==503
+    r=await group_policy_harness.app.test_client().post("/content-safety/policies/apply-field",json={})
+    assert r.status_code==503
 
 
 class FakePixivClient:
@@ -152,7 +163,8 @@ async def test_group_policy_list_is_fully_sorted_and_retains_explicit_strict(gro
         client = group_policy_harness.app.test_client()
         await client.post("/content-safety/group-policy", json={"group_id": "2", "general_only_enabled": True, "builtin_terms_enabled": True})
         await client.post("/content-safety/group-policy", json={"group_id": "1", "general_only_enabled": True, "builtin_terms_enabled": True})
-        response = await client.get("/content-safety/group-policies"); payload = await response.get_json()
+        response = await client.get("/content-safety/group-policies")
+        payload = await response.get_json()
     assert response.status_code == 200
     assert [p["group_id"] for p in payload["group_policies"]] == ["1", "2"]
     assert all(p["is_default"] is False for p in payload["group_policies"])
@@ -189,9 +201,12 @@ async def test_remove_returns_strict_default_and_is_idempotent(group_policy_harn
     async with group_policy_harness.app.test_app():
         client = group_policy_harness.app.test_client()
         await client.post("/content-safety/group-policy", json={"group_id": "1", "general_only_enabled": False, "builtin_terms_enabled": False})
-        first = await client.post("/content-safety/group-policy/remove", json={"group_id": "1"}); first_payload = await first.get_json()
-        second = await client.post("/content-safety/group-policy/remove", json={"group_id": "1"}); second_payload = await second.get_json()
-        lookup = await client.get("/content-safety?group_id=1"); lookup_payload = await lookup.get_json()
+        first = await client.post("/content-safety/group-policy/remove", json={"group_id": "1"})
+        first_payload = await first.get_json()
+        second = await client.post("/content-safety/group-policy/remove", json={"group_id": "1"})
+        second_payload = await second.get_json()
+        lookup = await client.get("/content-safety?group_id=1")
+        lookup_payload = await lookup.get_json()
     assert first.status_code == 200 and first_payload["removed"] is True
     assert first_payload["group_policy"]["is_default"] is True
     assert first_payload["group_policy"]["general_only_enabled"] is True and first_payload["group_policy"]["builtin_terms_enabled"] is True
@@ -226,7 +241,9 @@ async def test_remove_rejects_invalid_payloads(group_policy_harness, payload):
 async def test_lookup_returns_503_without_service(group_policy_harness):
     group_policy_harness.plugin.group_safety_service = None
     async with group_policy_harness.app.test_app():
-        client = group_policy_harness.app.test_client(); response = await client.get("/content-safety?group_id=1"); payload = await response.get_json()
+        client = group_policy_harness.app.test_client()
+        response = await client.get("/content-safety?group_id=1")
+        payload = await response.get_json()
     assert response.status_code == 503
     assert payload["success"] is False and payload["error"]
 
@@ -234,7 +251,9 @@ async def test_lookup_returns_503_without_service(group_policy_harness):
 async def test_upsert_returns_503_without_service(group_policy_harness):
     group_policy_harness.plugin.group_safety_service = None
     async with group_policy_harness.app.test_app():
-        client = group_policy_harness.app.test_client(); response = await client.post("/content-safety/group-policy", json={}); payload = await response.get_json()
+        client = group_policy_harness.app.test_client()
+        response = await client.post("/content-safety/group-policy", json={})
+        payload = await response.get_json()
     assert response.status_code == 503
     assert payload["success"] is False and payload["error"]
 
@@ -242,7 +261,9 @@ async def test_upsert_returns_503_without_service(group_policy_harness):
 async def test_list_returns_503_without_service(group_policy_harness):
     group_policy_harness.plugin.group_safety_service = None
     async with group_policy_harness.app.test_app():
-        client = group_policy_harness.app.test_client(); response = await client.get("/content-safety/group-policies"); payload = await response.get_json()
+        client = group_policy_harness.app.test_client()
+        response = await client.get("/content-safety/group-policies")
+        payload = await response.get_json()
     assert response.status_code == 503
     assert payload["success"] is False and payload["error"]
 
@@ -250,7 +271,9 @@ async def test_list_returns_503_without_service(group_policy_harness):
 async def test_remove_returns_503_without_service(group_policy_harness):
     group_policy_harness.plugin.group_safety_service = None
     async with group_policy_harness.app.test_app():
-        client = group_policy_harness.app.test_client(); response = await client.post("/content-safety/group-policy/remove", json={}); payload = await response.get_json()
+        client = group_policy_harness.app.test_client()
+        response = await client.post("/content-safety/group-policy/remove", json={})
+        payload = await response.get_json()
     assert response.status_code == 503
     assert payload["success"] is False and payload["error"]
 
@@ -258,7 +281,9 @@ async def test_remove_returns_503_without_service(group_policy_harness):
 async def test_global_content_safety_remains_200_without_group_service(group_policy_harness):
     group_policy_harness.plugin.group_safety_service = None
     async with group_policy_harness.app.test_app():
-        client = group_policy_harness.app.test_client(); response = await client.get("/content-safety"); payload = await response.get_json()
+        client = group_policy_harness.app.test_client()
+        response = await client.get("/content-safety")
+        payload = await response.get_json()
     assert response.status_code == 200
     assert payload["success"] is True and payload["rating_policy"] == "general_only"
 
@@ -267,7 +292,11 @@ async def test_upsert_save_failure_rolls_back_config_and_runtime(group_policy_ha
     async with group_policy_harness.app.test_app():
         client = group_policy_harness.app.test_client()
         await client.post("/content-safety/group-policy", json={"group_id": "1", "general_only_enabled": True, "builtin_terms_enabled": True})
-        old = group_policy_harness.plugin.config[CONFIG_KEY]; snapshot = [dict(x) for x in old]; service_snapshot = await group_policy_harness.plugin.group_safety_service.list_policies(); marker = group_policy_harness.plugin.config[MIGRATION_KEY]; group_policy_harness.plugin.config.fail_next = True
+        old = group_policy_harness.plugin.config[CONFIG_KEY]
+        snapshot = [dict(x) for x in old]
+        service_snapshot = await group_policy_harness.plugin.group_safety_service.list_policies()
+        marker = group_policy_harness.plugin.config[MIGRATION_KEY]
+        group_policy_harness.plugin.config.fail_next = True
         response = await client.post("/content-safety/group-policy", json={"group_id": "2", "general_only_enabled": False, "builtin_terms_enabled": False})
         listed = await (await client.get("/content-safety/group-policies")).get_json()
     assert response.status_code == 500
@@ -281,7 +310,11 @@ async def test_remove_save_failure_rolls_back_config_and_runtime(group_policy_ha
     async with group_policy_harness.app.test_app():
         client = group_policy_harness.app.test_client()
         await client.post("/content-safety/group-policy", json={"group_id": "1", "general_only_enabled": True, "builtin_terms_enabled": True})
-        old = group_policy_harness.plugin.config[CONFIG_KEY]; snapshot = [dict(x) for x in old]; service_snapshot = await group_policy_harness.plugin.group_safety_service.list_policies(); marker = group_policy_harness.plugin.config[MIGRATION_KEY]; group_policy_harness.plugin.config.fail_next = True
+        old = group_policy_harness.plugin.config[CONFIG_KEY]
+        snapshot = [dict(x) for x in old]
+        service_snapshot = await group_policy_harness.plugin.group_safety_service.list_policies()
+        marker = group_policy_harness.plugin.config[MIGRATION_KEY]
+        group_policy_harness.plugin.config.fail_next = True
         response = await client.post("/content-safety/group-policy/remove", json={"group_id": "1"})
         listed = await (await client.get("/content-safety/group-policies")).get_json()
     assert response.status_code == 500

@@ -22,9 +22,9 @@ try:
         normalize_safety_text,
         normalized_builtin_terms,
     )
-    from ..group_safety import normalize_group_id
     from .web_api_compat import unregister_web_apis
-except ImportError:  # Direct imports used by the test suite.
+except ImportError:
+    # Direct imports used by the test suite.
     from checkin import load_checkin_snapshot_json
     from pixiv.downloader import cleanup, pick_image_url_exact
     from pixiv.safety import (
@@ -34,7 +34,6 @@ except ImportError:  # Direct imports used by the test suite.
         normalize_safety_text,
         normalized_builtin_terms,
     )
-    from group_safety import normalize_group_id
     from plugin_api.web_api_compat import unregister_web_apis
 
 
@@ -55,7 +54,8 @@ class PluginWebApi:
         self.internal_error_message = internal_error_message
         self._registered_routes: list[tuple[str, object, tuple[str, ...]]] = []
 
-    def __getattr__(self, name: str) -> Any:
+    def __getattr__(self, name:
+        str) -> Any:
         return getattr(self.plugin, name)
 
     def register(self) -> None:
@@ -175,7 +175,8 @@ class PluginWebApi:
         unregister_web_apis(self.context, tuple(self._registered_routes))
         self._registered_routes.clear()
 
-    def internal_error(self, action: str, exc: Exception):
+    def internal_error(self, action:
+        str, exc: Exception):
         logger.error(
             f"{self.log_prefix} Web API {action}失败: "
             f"error_type={type(exc).__name__}"
@@ -334,9 +335,12 @@ class PluginWebApi:
             private_policy = None
             if group_id or user_id:
                 service = getattr(self.plugin, "group_safety_service", None)
-                if service is None: return self._unavailable("群内容安全设置尚未初始化")
-                if group_id: group_policy = await service.get_group_policy(group_id)
-                else: private_policy = await service.get_private_policy(user_id)
+                if service is None:
+                    return self._unavailable("群内容安全设置尚未初始化")
+                if group_id:
+                    group_policy = await service.get_group_policy(group_id)
+                else:
+                    private_policy = await service.get_private_policy(user_id)
             effective_policy = group_policy or private_policy
             general_only = (
                 bool(effective_policy["general_only_enabled"])
@@ -400,54 +404,76 @@ class PluginWebApi:
 
     async def content_safety_group_policies(self):
         service = getattr(self.plugin, "group_safety_service", None)
-        if service is None: return self._unavailable("群内容安全设置尚未初始化")
-        try: return jsonify({"success": True, "group_policies": await service.list_policies()})
-        except Exception as exc: return self.internal_error("读取群内容安全策略", exc)
+        if service is None:
+            return self._unavailable("群内容安全设置尚未初始化")
+        try:
+            return jsonify({"success": True, "group_policies": await service.list_policies()})
+        except Exception as exc:
+            return self.internal_error("读取群内容安全策略", exc)
 
     async def content_safety_group_policy_remove(self):
         service = getattr(self.plugin, "group_safety_service", None)
-        if service is None: return self._unavailable("群内容安全设置尚未初始化")
+        if service is None:
+            return self._unavailable("群内容安全设置尚未初始化")
         payload = await self._request_json_object()
-        if payload is None: return jsonify({"success": False, "error": "请求内容必须是对象"}), 400
+        if payload is None:
+            return jsonify({"success": False, "error": "请求内容必须是对象"}), 400
         try:
             removed, policy = await service.remove_policy(payload.get("group_id"))
             return jsonify({"success": True, "removed": removed, "group_policy": policy})
-        except ValueError as exc: return jsonify({"success": False, "error": str(exc)}), 400
-        except Exception as exc: return self.internal_error("删除群内容安全策略", exc)
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return self.internal_error("删除群内容安全策略", exc)
 
     async def content_safety_private_policy(self):
         service = getattr(self.plugin, "group_safety_service", None)
-        if service is None: return self._unavailable("私聊内容安全设置尚未初始化")
+        if service is None:
+            return self._unavailable("私聊内容安全设置尚未初始化")
         payload = await self._request_json_object()
         required = {"user_id", "general_only_enabled", "builtin_terms_enabled"}
-        if payload is None or not required.issubset(payload): return jsonify({"success": False, "error": "缺少私聊策略必填字段"}), 400
-        if type(payload["general_only_enabled"]) is not bool or type(payload["builtin_terms_enabled"]) is not bool: return jsonify({"success": False, "error": "策略开关必须是布尔值"}), 400
+        if payload is None or not required.issubset(payload):
+            return jsonify({"success": False, "error": "缺少私聊策略必填字段"}), 400
+        if type(payload["general_only_enabled"]) is not bool or type(payload["builtin_terms_enabled"]) is not bool:
+            return jsonify({"success": False, "error": "策略开关必须是布尔值"}), 400
         for field in ("custom_terms", "blacklisted_illust_ids"):
-            if field in payload and not isinstance(payload[field], list): return jsonify({"success": False, "error": f"{field} 必须是数组"}), 400
-        try: return jsonify({"success": True, "private_policy": await service.upsert_private_policy(payload["user_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], custom_terms=payload.get("custom_terms"), blacklisted_illust_ids=payload.get("blacklisted_illust_ids"), updated_by="web")})
-        except ValueError as exc: return jsonify({"success": False, "error": str(exc)}), 400
-        except Exception as exc: return self.internal_error("更新私聊内容安全策略", exc)
+            if field in payload and not isinstance(payload[field], list):
+                return jsonify({"success": False, "error": f"{field} 必须是数组"}), 400
+        try:
+            return jsonify({"success": True, "private_policy": await service.upsert_private_policy(payload["user_id"], general_only_enabled=payload["general_only_enabled"], builtin_terms_enabled=payload["builtin_terms_enabled"], custom_terms=payload.get("custom_terms"), blacklisted_illust_ids=payload.get("blacklisted_illust_ids"), updated_by="web")})
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return self.internal_error("更新私聊内容安全策略", exc)
 
     async def content_safety_private_policies(self):
         service = getattr(self.plugin, "group_safety_service", None)
-        if service is None: return self._unavailable("私聊内容安全设置尚未初始化")
-        try: return jsonify({"success": True, "private_policies": await service.list_private_policies()})
-        except Exception as exc: return self.internal_error("读取私聊内容安全策略", exc)
+        if service is None:
+            return self._unavailable("私聊内容安全设置尚未初始化")
+        try:
+            return jsonify({"success": True, "private_policies": await service.list_private_policies()})
+        except Exception as exc:
+            return self.internal_error("读取私聊内容安全策略", exc)
 
     async def content_safety_private_policy_remove(self):
         service = getattr(self.plugin, "group_safety_service", None)
-        if service is None: return self._unavailable("私聊内容安全设置尚未初始化")
+        if service is None:
+            return self._unavailable("私聊内容安全设置尚未初始化")
         payload = await self._request_json_object()
-        if payload is None: return jsonify({"success": False, "error": "请求内容必须是对象"}), 400
+        if payload is None:
+            return jsonify({"success": False, "error": "请求内容必须是对象"}), 400
         try:
             removed, policy = await service.remove_private_policy(payload.get("user_id"))
             return jsonify({"success": True, "removed": removed, "private_policy": policy})
-        except ValueError as exc: return jsonify({"success": False, "error": str(exc)}), 400
-        except Exception as exc: return self.internal_error("删除私聊内容安全策略", exc)
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return self.internal_error("删除私聊内容安全策略", exc)
 
     async def content_safety_policy_apply_field(self):
         service = getattr(self.plugin, "group_safety_service", None)
-        if service is None: return self._unavailable("群内容安全设置尚未初始化")
+        if service is None:
+            return self._unavailable("群内容安全设置尚未初始化")
         payload = await self._request_json_object()
         required = {"source_scope", "source_id", "field", "target"}
         if payload is None or not required.issubset(payload):
@@ -455,9 +481,12 @@ class PluginWebApi:
         try:
             result = await service.apply_policy_field(payload["source_scope"], payload["source_id"], payload["field"], payload["target"], updated_by="web")
             return jsonify({"success": True, **result})
-        except LookupError as exc: return jsonify({"success": False, "error": str(exc)}), 404
-        except ValueError as exc: return jsonify({"success": False, "error": str(exc)}), 400
-        except Exception as exc: return self.internal_error("批量应用内容安全策略", exc)
+        except LookupError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 404
+        except ValueError as exc:
+            return jsonify({"success": False, "error": str(exc)}), 400
+        except Exception as exc:
+            return self.internal_error("批量应用内容安全策略", exc)
 
     async def content_safety_term_add(self):
         if self.plugin.image_index is None:
@@ -601,7 +630,8 @@ class PluginWebApi:
         finally:
             cleanup(temp_path)
 
-    async def _thumbnail_is_safe(self, illust: dict[str, Any]) -> bool:
+    async def _thumbnail_is_safe(self, illust:
+        dict[str, Any]) -> bool:
         if int(illust.get("x_restrict", 0) or 0) != 0:
             return False
         try:
@@ -782,7 +812,8 @@ class PluginWebApi:
             return self.internal_error("清理缓存数据", exc)
 
     @staticmethod
-    def _format_bytes(size: int) -> str:
+    def _format_bytes(size:
+        int) -> str:
         if size < 1024:
             return f"{size} B"
         if size < 1024 * 1024:
@@ -913,7 +944,8 @@ class PluginWebApi:
             .isoformat(timespec="seconds")
         )
 
-    async def _require_known_group(self, value: object) -> str:
+    async def _require_known_group(self, value:
+        object) -> str:
         group_id = str(value or "").strip()
         if not group_id:
             raise ValueError("缺少 group_id")
@@ -923,7 +955,8 @@ class PluginWebApi:
         return group_id
 
     @staticmethod
-    def _parse_int(value: object, minimum: int, maximum: int) -> int:
+    def _parse_int(value:
+        object, minimum: int, maximum: int) -> int:
         try:
             parsed = int(str(value))
         except (TypeError, ValueError) as exc:
@@ -938,7 +971,8 @@ class PluginWebApi:
         return payload if isinstance(payload, dict) else None
 
     @staticmethod
-    def _parse_profile_integer(value: object, label: str) -> int:
+    def _parse_profile_integer(value:
+        object, label: str) -> int:
         try:
             if isinstance(value, bool):
                 raise ValueError
@@ -950,7 +984,8 @@ class PluginWebApi:
         return parsed
 
     @staticmethod
-    def _parse_profile_affection(value: object) -> float:
+    def _parse_profile_affection(value:
+        object) -> float:
         try:
             if isinstance(value, bool):
                 raise ValueError
@@ -964,7 +999,8 @@ class PluginWebApi:
         return round(parsed, 2)
 
     @staticmethod
-    def _normalize_request_ids(value: object) -> list[str]:
+    def _normalize_request_ids(value:
+        object) -> list[str]:
         if not isinstance(value, list):
             return []
         result: list[str] = []
@@ -980,7 +1016,8 @@ class PluginWebApi:
         return result
 
     @staticmethod
-    def _encode_thumb_data_urls(paths: dict[str, object]) -> dict[str, str]:
+    def _encode_thumb_data_urls(paths:
+        dict[str, object]) -> dict[str, str]:
         result: dict[str, str] = {}
         for record_id, path in paths.items():
             try:
@@ -991,5 +1028,6 @@ class PluginWebApi:
         return result
 
     @staticmethod
-    def _unavailable(message: str = "插件数据尚未初始化"):
+    def _unavailable(message:
+        str = "插件数据尚未初始化"):
         return jsonify({"success": False, "error": message}), 503

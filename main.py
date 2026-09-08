@@ -844,11 +844,13 @@ class GetPxPlugin(
                     nested = group.get(key)
                     if key == "group_content_safety_policies_migrated":
                         if bool(legacy) and not bool(nested):
-                            group[key] = True; moved.append(key)
+                            group[key] = True
+                            moved.append(key)
                     elif (not nested and isinstance(legacy, list) and
                           any(isinstance(item, dict) and item.get("__template_key")
                               for item in legacy)):
-                        group[key] = deepcopy(legacy); moved.append(key)
+                        group[key] = deepcopy(legacy)
+                        moved.append(key)
                 if moved:
                     saver = getattr(config, "save_config", None)
                     if not callable(saver):
@@ -877,7 +879,8 @@ class GetPxPlugin(
                     if present:
                         current = config.get(key)
                         if isinstance(current, list) and isinstance(value, list):
-                            current[:] = deepcopy(value_copy); config[key] = current
+                            current[:] = deepcopy(value_copy)
+                            config[key] = current
                         else:
                             config[key] = deepcopy(value_copy)
                     else:
