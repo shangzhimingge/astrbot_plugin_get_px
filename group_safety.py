@@ -128,10 +128,12 @@ def _normalize_entries(raw: object, *, private: bool = False):
             raw_ids = item.get("blacklisted_illust_ids", [])
             if isinstance(raw_terms, list):
                 warnings.extend(f"entry {index}: custom_terms[{i}] invalid and dropped" for i, v in enumerate(raw_terms) if not isinstance(v, str) or not v.strip() or not normalize_safety_text(v.strip()))
-            elif "custom_terms" in item: warnings.append(f"entry {index}: custom_terms must be a list; dropped")
+            elif "custom_terms" in item:
+                warnings.append(f"entry {index}: custom_terms must be a list; dropped")
             if isinstance(raw_ids, list):
                 warnings.extend(f"entry {index}: blacklisted_illust_ids[{i}] invalid and dropped" for i, v in enumerate(raw_ids) if not isinstance(v, str) or not v.strip().isdigit() or int(v.strip()) <= 0)
-            elif "blacklisted_illust_ids" in item: warnings.append(f"entry {index}: blacklisted_illust_ids must be a list; dropped")
+            elif "blacklisted_illust_ids" in item:
+                warnings.append(f"entry {index}: blacklisted_illust_ids must be a list; dropped")
         except ValueError as exc:
             warnings.append(f"entry {index}: {exc}")
             continue
@@ -299,17 +301,22 @@ class SessionSafetyService:
             if group_candidate is not None:
                 serialized = self._entries(group_candidate, private=False)
                 current = self._container().get(CONFIG_KEY)
-                if isinstance(current, list): current[:] = deepcopy(serialized)
-                else: self._set_config(CONFIG_KEY, deepcopy(serialized))
+                if isinstance(current, list):
+                    current[:] = deepcopy(serialized)
+                else:
+                    self._set_config(CONFIG_KEY, deepcopy(serialized))
             if private_candidate is not None:
                 serialized = self._entries(private_candidate, private=True)
                 current = self._container().get(PRIVATE_CONFIG_KEY)
-                if isinstance(current, list): current[:] = deepcopy(serialized)
-                else: self._set_config(PRIVATE_CONFIG_KEY, deepcopy(serialized))
+                if isinstance(current, list):
+                    current[:] = deepcopy(serialized)
+                else:
+                    self._set_config(PRIVATE_CONFIG_KEY, deepcopy(serialized))
             if migrated is not None:
                 self._set_config(MIGRATION_KEY, bool(migrated))
             saver = getattr(self.config, "save_config", None)
-            if not callable(saver): raise RuntimeError("config.save_config is required")
+            if not callable(saver):
+                raise RuntimeError("config.save_config is required")
             saver()
         except Exception:
             self._restore_config(snapshot)
@@ -467,30 +474,42 @@ class SessionSafetyService:
         return await self._remove(user_id, private=True)
 
     async def apply_policy_field(self, source_scope, source_id, field, target, updated_by="web"):
-        if source_scope not in {"group", "private"}: raise ValueError("invalid source_scope")
-        if field not in LIST_FIELDS: raise ValueError("invalid field")
-        if target not in {"group", "private", "all"}: raise ValueError("invalid target")
+        if source_scope not in {"group", "private"}:
+            raise ValueError("invalid source_scope")
+        if field not in LIST_FIELDS:
+            raise ValueError("invalid field")
+        if target not in {"group", "private", "all"}:
+            raise ValueError("invalid target")
         source_private = source_scope == "private"
         source_id = _normalize(source_id, "user_id" if source_private else "group_id")
         async with self._lock:
             source = self._source(source_private)
-            if source_id not in source: raise LookupError("source policy not found")
+            if source_id not in source:
+                raise LookupError("source policy not found")
             value = list(source[source_id].get(field, []))
             group_candidate = deepcopy(self._policies) if target in {"group", "all"} else None
             private_candidate = deepcopy(self._private_policies) if target in {"private", "all"} else None
-            changed_group = changed_private = 0
+            changed_group = 0
+            changed_private = 0
             for candidate, count in ((group_candidate, "group"), (private_candidate, "private")):
-                if candidate is None: continue
+                if candidate is None:
+                    continue
                 for identifier, record in candidate.items():
                     if record.get(field, []) != value:
-                        record[field] = list(value); record["updated_by"] = str(updated_by or ""); record["updated_at"] = datetime.now(timezone.utc).isoformat()
-                        if count == "group": changed_group += 1
-                        else: changed_private += 1
+                        record[field] = list(value)
+                        record["updated_by"] = str(updated_by or "")
+                        record["updated_at"] = datetime.now(timezone.utc).isoformat()
+                        if count == "group":
+                            changed_group += 1
+                        else:
+                            changed_private += 1
             if not changed_group and not changed_private:
                 return {"field": field, "target": target, "updated_count": 0, "group_updated_count": 0, "private_updated_count": 0}
             self._save_candidates(group_candidate, private_candidate, migrated=True if group_candidate is not None else None)
-            if group_candidate is not None: self._policies = group_candidate
-            if private_candidate is not None: self._private_policies = private_candidate
+            if group_candidate is not None:
+                self._policies = group_candidate
+            if private_candidate is not None:
+                self._private_policies = private_candidate
             return {"field": field, "target": target, "updated_count": changed_group + changed_private, "group_updated_count": changed_group, "private_updated_count": changed_private}
 
     async def list_policies(self):
