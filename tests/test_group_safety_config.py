@@ -1,6 +1,9 @@
-import pytest
-
+import importlib
+import sys
 from copy import deepcopy
+from pathlib import Path
+
+import pytest
 
 from group_safety import (
     CONFIG_KEY,
@@ -9,6 +12,17 @@ from group_safety import (
     GroupSafetyService,
     normalize_policy_entries,
 )
+
+
+def test_group_safety_imports_in_plugin_package_context():
+    repo = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(repo.parent))
+    try:
+        module = importlib.import_module(f"{repo.name}.group_safety")
+        assert callable(module.normalize_safety_text)
+    finally:
+        sys.path.remove(str(repo.parent))
+
 
 class Config(dict):
     def __init__(self, *args, **kwargs):

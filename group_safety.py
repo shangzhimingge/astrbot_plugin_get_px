@@ -5,7 +5,13 @@ from copy import deepcopy
 from datetime import datetime, timezone
 from typing import Any
 
-from pixiv.safety import normalize_safety_text
+# AstrBot loads this plugin as a package, while the repository tests also
+# import modules directly from the checkout root. Keep both contexts explicit
+# so a failed package import never falls through to a top-level fallback.
+if __package__:
+    from .pixiv.safety import normalize_safety_text
+else:
+    from pixiv.safety import normalize_safety_text
 
 try:
     from astrbot.api.all import logger
