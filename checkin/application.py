@@ -183,6 +183,7 @@ class CheckinApplicationMixin:
         card_path: Path | None = None
         claim_held = False
         background_persisted = False
+        background_reselected = False
         profile_snapshot = self._checkin_profile_from_record(record)
         user_title = await self._get_checkin_user_title(record.user_id)
         preferred_tier = (
@@ -264,6 +265,41 @@ class CheckinApplicationMixin:
                             f"{LOG_PREFIX} 签到背景实际质量已同步: "
                             f"quality={restored_quality}"
                         )
+                if background.mode != "pixiv_daily" and (
+                    record.background_mode == "pixiv_daily"
+                ):
+                    # 在线背景恢复失败（作品被删、换图、不符规范等）时重新选一张，
+                    # 而不是直接发内置占位图；custom 背景恢复失败保持占位行为。
+                    stage = "background_reselect"
+                    logger.info(
+                        f"{LOG_PREFIX} 签到背景恢复失败，重新选择在线背景: "
+                        f"illust_id={record.background_illust_id} "
+                        f"restored_mode={background.mode}"
+                    )
+                    reselected = await self._prepare_checkin_background(
+                        event,
+                        record,
+                        render_tier=preferred_tier,
+                    )
+                    if reselected is not None and reselected.mode == "pixiv_daily":
+                        background = reselected
+                        background_reselected = True
+                        # mode 已由重选分支保证为 pixiv_daily，仅查占用与 illust_id。
+                        claim_held = bool(
+                            background.illust_id
+                            and self._checkin_background_claims_enabled()
+                        )
+                        logger.info(
+                            f"{LOG_PREFIX} 签到背景重选完成: "
+                            f"illust_id={background.illust_id} "
+                            f"source={background.source.partition(':')[0] or 'unknown'} "
+                            f"quality={background.quality}"
+                        )
+                    else:
+                        logger.debug(
+                            f"{LOG_PREFIX} 签到背景重选失败，使用占位图: "
+                            f"reselected_mode={getattr(reselected, 'mode', 'none')}"
+                        )
             if cached_path is None:
                 stage = "card_render"
                 cached_path, actual_tier = await self._render_checkin_card_with_fallback(
@@ -278,7 +314,9 @@ class CheckinApplicationMixin:
                     policy=policy,
                 )
 
-            if not result.duplicate and background is not None:
+            if (
+                not result.duplicate or background_reselected
+            ) and background is not None:
                 stage = "background_persist"
                 await self.checkin_store.update_record_background(
                     user_id=user_id,
@@ -309,6 +347,12 @@ class CheckinApplicationMixin:
                 content = [Image.fromFileSystem(str(card_path))]
                 if background and background.pixiv_caption:
                     content.append(Plain(background.pixiv_caption))
+                if not result.duplicate:
+                    quota_line = await self._grant_checkin_omnidraw_quota(
+                        event, user_id
+                    )
+                    if quota_line:
+                        content.append(Plain(quota_line))
                 stage = "card_send"
                 await event.send(event.chain_result(content))
                 # 图片发送成功后不再释放 pending；即使升级正式记录失败，也要继续去重。
@@ -397,6 +441,34 @@ class CheckinApplicationMixin:
                             f"mode=pixiv_daily"
                         )
         yield event.plain_result(self._format_checkin_plain_text(result))
+
+    async def _grant_checkin_omnidraw_quota(
+        self, event: AstrMessageEvent, user_id: str
+    ) -> str:
+        """首签成功后顺便给万象画卷发当日生图额度（替代被 stop_event 屏蔽的对方 /签到）。
+
+        失败时静默返回空串，不阻断签到主流程。
+        """
+        bridge = getattr(self, "_omnidraw_bridge", None)
+        if bridge is None:
+            return ""
+        try:
+            status = bridge.snapshot(user_id, str(event.get_group_id() or ""))
+        except Exception as exc:
+            logger.warning(
+                f"{LOG_PREFIX} 签到联动额度预检失败: "
+                f"user_id={user_id} error_type={type(exc).__name__}"
+            )
+            return ""
+        if not status.available or not status.checkin_enabled:
+            return ""
+        display_name = str(event.get_sender_name() or "")
+        granted = await bridge.grant_daily_checkin_bonus(
+            user_id, display_name=display_name
+        )
+        if not granted.granted:
+            return ""
+        return f"\n{granted.message}（当日有效，剩余 {granted.remaining} 张）"
 
     async def _prepare_checkin_record_content(
         self,
@@ -523,7 +595,7 @@ class CheckinApplicationMixin:
             return await self.checkin_greeting.generate_hitokoto(
                 content.context,
                 timeout=self._cfg_float("checkin_hitokoto_timeout", 5.0, 1.0, 15.0),
-                categories=self.config.get("checkin_hitokoto_categories", ["全部"]),
+                categories=self._cfg_get("checkin_hitokoto_categories", ["全部"]),
             )
         greeting, source = await self.checkin_greeting.generate(
             event,
@@ -561,7 +633,7 @@ class CheckinApplicationMixin:
             ) = await self.checkin_greeting.generate_hitokoto(
                 content.context,
                 timeout=self._cfg_float("checkin_hitokoto_timeout", 5.0, 1.0, 15.0),
-                categories=self.config.get("checkin_hitokoto_categories", ["全部"]),
+                categories=self._cfg_get("checkin_hitokoto_categories", ["全部"]),
             )
             if source != "hitokoto" or not greeting:
                 return record
@@ -713,7 +785,7 @@ class CheckinApplicationMixin:
             background=identity_background,
             user_title=user_title,
             background_refresh_cost=self._cfg_int(
-                "checkin_background_refresh_cost", 100, 0, 500
+                "checkin_background_refresh_cost", 100, 0, 300
             ),
         )
         view_model["background_mode"] = identity_background.mode

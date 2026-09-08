@@ -466,7 +466,31 @@ class CheckinCommandMixin:
             f"好感度: {profile.affection:.2f}（{level['name']}）",
             f"好感度加持: {boost_status_text(profile, today)}",
         ]
+        quota_line = await self._omnidraw_quota_status(event, user_id)
+        if quota_line:
+            lines.append(quota_line)
         yield event.plain_result("\n".join(lines))
+
+    async def _omnidraw_quota_status(
+        self, event: AstrMessageEvent, user_id: str
+    ) -> str:
+        """读取万象画卷当日生图额度（如有安装且启用）。"""
+        bridge = getattr(self, "_omnidraw_bridge", None)
+        if bridge is None:
+            return ""
+        try:
+            status = bridge.snapshot(user_id, str(event.get_group_id() or ""))
+        except Exception:
+            return ""
+        if not status.available:
+            return ""
+        if status.unlimited:
+            return "生图额度: 不限额"
+        base_left = max(0, status.base_limit - status.used)
+        bonus_left = max(0, status.remaining - base_left)
+        if base_left > 0:
+            return f"生图额度: 基础 {base_left} 张，今日限时 {bonus_left} 张，当日有效"
+        return f"生图额度: 今日额度 {bonus_left} 张，当日有效"
 
     async def _handle_checkin_birthday(
         self, event: AstrMessageEvent, action: str, value: str

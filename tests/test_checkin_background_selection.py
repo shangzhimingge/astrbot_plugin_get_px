@@ -116,12 +116,13 @@ class CheckinBackgroundSelectionTest(unittest.IsolatedAsyncioTestCase):
         schema_path = Path(__file__).resolve().parents[1] / "_conf_schema.json"
         schema = json.loads(schema_path.read_text(encoding="utf-8"))
 
-        self.assertEqual(schema["checkin_greeting_mode"]["default"], "hitokoto")
+        basic = schema["checkin_basic"]["items"]
+        self.assertEqual(basic["checkin_greeting_mode"]["default"], "hitokoto")
         self.assertEqual(
-            schema["checkin_greeting_mode"]["options"],
+            basic["checkin_greeting_mode"]["options"],
             ["local", "hitokoto", "ai"],
         )
-        categories = schema["checkin_hitokoto_categories"]
+        categories = basic["checkin_hitokoto_categories"]
         self.assertEqual(categories["type"], "list")
         self.assertEqual(categories["default"], ["全部"])
         self.assertIn("动画", categories["options"])

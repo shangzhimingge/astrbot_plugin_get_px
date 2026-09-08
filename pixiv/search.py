@@ -43,7 +43,7 @@ class SearchMixin:
         return platform_name == AIOCQHTTP_PLATFORM and downloaded_count > threshold
 
     def _p_unit_cost(self) -> int:
-        return self._cfg_int("p_coin_cost", 20, 0, 500)
+        return self._cfg_int("p_coin_cost", 20, 0, 200)
 
     def _p_charging_active(self) -> bool:
         return (
@@ -239,7 +239,7 @@ class SearchMixin:
             "auto_downgrade_original_mb",
             DEFAULT_AUTO_DOWNGRADE_ORIGINAL_LIMIT_MB,
             0.0,
-            100.0,
+            25.0,
         )
         downgrade_limit_bytes = int(downgrade_limit_mb * 1024 * 1024)
         filter_manga = self._cfg_bool("filter_manga", True)

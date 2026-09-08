@@ -49,6 +49,7 @@ class CheckinShopItem:
 def build_checkin_shop_items(
     refresh_cost: int,
     theme_cost: int = 1500,
+    quota_item: CheckinShopItem | None = None,
 ) -> tuple[CheckinShopItem, ...]:
     """Build the current catalog; add future products in this one registry."""
     items = [
@@ -85,6 +86,8 @@ def build_checkin_shop_items(
         for theme in CHECKIN_THEMES.values()
         if theme.enabled
     )
+    if quota_item is not None:
+        items.append(quota_item)
     return tuple(items)
 
 
@@ -127,8 +130,137 @@ class CheckinShopMixin:
             )
         yield event.plain_result("\n".join(lines))
 
+    def _omnidraw_quota_item(self) -> CheckinShopItem | None:
+        bridge = getattr(self, "_omnidraw_bridge", None)
+        if bridge is None:
+            return None
+        if not bridge.snapshot().available:
+            return None
+        unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 300)
+        return CheckinShopItem(
+            item_id="omnidraw:quota",
+            category="omnidraw",
+            command="签到商店 生图 [张数]",
+            name="生图额度（每张）",
+            price=unit_price,
+        )
+
+    async def _handle_buy_checkin_quota(
+        self, event: AstrMessageEvent, count: str = "", *, _flow_locked: bool = False
+    ):
+        if not self._cfg_bool("checkin_enabled", True):
+            yield event.plain_result("签到功能已关闭")
+            return
+        if self.checkin_store is None:
+            yield event.plain_result("签到数据尚未初始化，请稍后再试")
+            return
+        if not count:
+            amount = self._cfg_int("checkin_omnidraw_quota_default", 1, 1, 50)
+        elif count.isdigit() and 1 <= int(count) <= 50:
+            amount = int(count)
+        else:
+            yield event.plain_result(
+                "用法: 签到商店 生图 [张数]\n示例: 签到商店 生图 5\n张数范围 1-50"
+            )
+            return
+        bridge = getattr(self, "_omnidraw_bridge", None)
+        if bridge is None:
+            yield event.plain_result("未检测到万象画卷插件，无法购买生图额度")
+            return
+        user_id = str(event.get_sender_id() or "")
+        if not user_id:
+            yield event.plain_result("无法识别用户 ID，暂时不能购买生图额度")
+            return
+        if not _flow_locked:
+            lock = self._checkin_flow_lock(user_id)
+            async with lock:
+                outputs = [
+                    item
+                    async for item in self._handle_buy_checkin_quota(
+                        event, count, _flow_locked=True
+                    )
+                ]
+            for output in outputs:
+                yield output
+            return
+        status = bridge.snapshot(user_id, str(event.get_group_id() or ""))
+        if not status.available:
+            yield event.plain_result("万象画卷未启用每日生图限制，暂时无法购买生图额度")
+            return
+        if status.blocked:
+            yield event.plain_result("你已被万象画卷加入黑名单，无法购买生图额度")
+            return
+        if not status.usable:
+            yield event.plain_result("你不在万象画卷可使用人员白名单内，无法购买生图额度")
+            return
+        if status.unlimited:
+            yield event.plain_result("你已是万象画卷不限额用户，无需购买生图额度")
+            return
+        daily_max = self._cfg_int("checkin_omnidraw_quota_daily_max", 10, 0, 30)
+        today = self.checkin_store.today_key()
+        if daily_max > 0:
+            purchased = await self.checkin_store.get_omnidraw_quota_purchased(
+                user_id=user_id, date_key=today
+            )
+            if purchased + amount > daily_max:
+                yield event.plain_result(
+                    f"今日生图额度购买上限 {daily_max} 张，"
+                    f"你已购买 {purchased} 张，剩余 {daily_max - purchased} 张可购。"
+                )
+                return
+        unit_price = self._cfg_int("checkin_omnidraw_quota_cost", 75, 0, 300)
+        cost = unit_price * amount
+        spend = await self.checkin_store.spend_coins(user_id=user_id, cost=cost)
+        if not spend.success:
+            yield event.plain_result(spend.message)
+            return
+        granted = await bridge.grant(
+            user_id, amount, display_name=str(event.get_sender_name() or "")
+        )
+        if not granted.granted:
+            if cost > 0:
+                try:
+                    refund = await self.checkin_store.add_coins(
+                        user_id=user_id, amount=cost
+                    )
+                    logger.warning(
+                        f"{LOG_PREFIX} 生图额度发放失败，金币已退回: "
+                        f"user_id={user_id} cost={cost} reason={granted.message or 'unknown'}"
+                    )
+                    yield event.plain_result(
+                        f"生图额度发放失败（{granted.message or '未知原因'}），"
+                        f"{refund.cost} 金币已退回，当前金币 {refund.profile.coins}。"
+                    )
+                except Exception as exc:
+                    logger.error(
+                        f"{LOG_PREFIX} 生图额度发放失败且退款异常: "
+                        f"user_id={user_id} cost={cost} "
+                        f"error_type={type(exc).__name__} reason={exc}"
+                    )
+                    yield event.plain_result(
+                        f"生图额度发放失败（{granted.message or '未知原因'}），"
+                        f"金币退款异常，请联系管理员核对（需退 {cost} 金币）。"
+                    )
+            else:
+                logger.warning(
+                    f"{LOG_PREFIX} 生图额度发放失败: "
+                    f"user_id={user_id} cost={cost} reason={granted.message or 'unknown'}"
+                )
+                yield event.plain_result(
+                    f"生图额度发放失败（{granted.message or '未知原因'}）。"
+                )
+            return
+        await self.checkin_store.add_omnidraw_quota_purchase(
+            user_id=user_id, date_key=today, amount=amount
+        )
+        yield event.plain_result(
+            f"{granted.message}\n"
+            f"当前金币: {spend.profile.coins}\n"
+            f"今日剩余生图额度: {granted.remaining} 张（当日有效）"
+        )
+
     def _build_checkin_shop(self) -> str:
-        refresh_cost = self._cfg_int("checkin_background_refresh_cost", 100, 0, 500)
+        refresh_cost = self._cfg_int("checkin_background_refresh_cost", 100, 0, 300)
         theme_cost = self._cfg_int("checkin_theme_cost", 1500, 0, 5000)
         lines = [
             "签到商店",
@@ -136,7 +268,9 @@ class CheckinShopMixin:
         ]
         lines.extend(
             item.render_line()
-            for item in build_checkin_shop_items(refresh_cost, theme_cost)
+            for item in build_checkin_shop_items(
+                refresh_cost, theme_cost, self._omnidraw_quota_item()
+            )
         )
         lines.append(
             "使用“签到主题 查看 <编号>”预览，"
@@ -281,7 +415,7 @@ class CheckinShopMixin:
         if record is None:
             yield event.plain_result("请先完成今天的签到，再更新背景")
             return
-        cost = self._cfg_int("checkin_background_refresh_cost", 100, 0, 500)
+        cost = self._cfg_int("checkin_background_refresh_cost", 100, 0, 300)
         profile = await self.checkin_store.get_profile(user_id)
         if profile.coins < cost:
             yield event.plain_result(

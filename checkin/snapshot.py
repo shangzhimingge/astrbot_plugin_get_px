@@ -54,6 +54,7 @@ def validate_checkin_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         "achievements": snapshot.get("achievements"),
         "user_themes": snapshot.get("user_themes"),
         "group_presence": snapshot.get("group_presence"),
+        "omnidraw_quota_purchases": snapshot.get("omnidraw_quota_purchases") or [],
     }
     for key, value in collections.items():
         if not isinstance(value, list):
@@ -79,6 +80,10 @@ def validate_checkin_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
     group_presence = [
         _normalize_group_presence_row(row, i)
         for i, row in enumerate(collections["group_presence"])
+    ]
+    omnidraw_quota_purchases = [
+        _normalize_omnidraw_quota_purchase_row(row, i)
+        for i, row in enumerate(collections["omnidraw_quota_purchases"])
     ]
 
     user_ids: set[str] = set()
@@ -141,6 +146,17 @@ def validate_checkin_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
             raise ValueError(f"group_presence[{index}].user_id has no matching user")
         presence_keys.add(key)
 
+    quota_purchase_keys: set[tuple[str, str]] = set()
+    for index, purchase in enumerate(omnidraw_quota_purchases):
+        purchase_key = (purchase["date_key"], purchase["user_id"])
+        if purchase_key in quota_purchase_keys:
+            raise ValueError(f"omnidraw_quota_purchases[{index}] duplicate")
+        if purchase["user_id"] not in user_ids:
+            raise ValueError(
+                f"omnidraw_quota_purchases[{index}].user_id has no matching user"
+            )
+        quota_purchase_keys.add(purchase_key)
+
     return {
         "schema_version": CHECKIN_SNAPSHOT_SCHEMA_VERSION,
         "plugin_name": CHECKIN_SNAPSHOT_PLUGIN_NAME,
@@ -152,6 +168,7 @@ def validate_checkin_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
         "achievements": achievements,
         "user_themes": user_themes,
         "group_presence": group_presence,
+        "omnidraw_quota_purchases": omnidraw_quota_purchases,
     }
 
 
@@ -311,6 +328,25 @@ def _normalize_group_presence_row(row: Any, index: int) -> dict[str, Any]:
         "username": _require_text(row, "username", location),
         "first_seen_at": _require_text(row, "first_seen_at", location),
         "last_seen_at": _require_text(row, "last_seen_at", location),
+    }
+
+
+def _normalize_omnidraw_quota_purchase_row(row: Any, index: int) -> dict[str, Any]:
+    location = f"omnidraw_quota_purchases[{index}]"
+    if not isinstance(row, dict):
+        raise ValueError(f"{location} 必须是对象")
+    date_key = _require_text(row, "date_key", location)
+    try:
+        date.fromisoformat(date_key)
+    except ValueError as exc:
+        raise ValueError(f"{location}.date_key 无效") from exc
+    purchased = _require_int(row, "purchased", location)
+    if purchased < 0:
+        raise ValueError(f"{location}.purchased 不能为负数")
+    return {
+        "date_key": date_key,
+        "user_id": _require_text(row, "user_id", location),
+        "purchased": purchased,
     }
 
 

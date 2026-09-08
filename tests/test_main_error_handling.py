@@ -708,6 +708,161 @@ class MainErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
             second_policy=ContentSafetyPolicy(),
         )
 
+    async def test_duplicate_restore_failure_reselects_and_persists_new_artwork(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            order = []
+            record = _record()
+            result = CheckinResult(_profile(), record, duplicate=True)
+            plugin = _plugin_for_checkin(tmp, result, order)
+            plugin._restore_checkin_background.return_value = CardBackground(
+                mode="fallback", source="fallback"
+            )
+            source = Path(tmp) / "reselected.png"
+            PILImage.new("RGB", (750, 1000), (40, 80, 160)).save(source)
+            reselected = CardBackground(
+                image_path=str(source),
+                mode="pixiv_daily",
+                source="lolicon:random",
+                illust_id="778899:0",
+                title="New Art",
+                author="Someone Else",
+                quality="high",
+            )
+
+            async def prepare(*_args, **_kwargs):
+                order.append("reselect_artwork")
+                return reselected
+
+            plugin._prepare_checkin_background.side_effect = prepare
+            rendered = Path(tmp) / "rendered.jpg"
+
+            async def render(*_args, **_kwargs):
+                order.append("render")
+                return _make_card(rendered)
+
+            plugin._render_checkin_card.side_effect = render
+
+            output = await _collect(plugin._handle_checkin(_FakeEvent(order)))
+
+            self.assertEqual(output, [])
+            plugin._restore_checkin_background.assert_awaited_once()
+            plugin._prepare_checkin_background.assert_awaited_once()
+            self.assertEqual(len(plugin.checkin_store.background_updates), 1)
+            update = plugin.checkin_store.background_updates[0]
+            self.assertEqual(update["illust_id"], "778899:0")
+            self.assertEqual(update["mode"], "pixiv_daily")
+            self.assertEqual(update["quality"], "high")
+            self.assertLess(
+                order.index("cache_get"), order.index("reselect_artwork")
+            )
+            self.assertLess(order.index("reselect_artwork"), order.index("render"))
+            self.assertLess(order.index("render"), order.index("background_metadata"))
+            self.assertLess(order.index("background_metadata"), order.index("send"))
+            self.assertIn("usage", order)
+            self.assertNotIn("release_claim", order)
+
+    async def test_duplicate_reselect_send_failure_reverts_persist_and_releases_claim(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            order = []
+            record = _record()
+            result = CheckinResult(_profile(), record, duplicate=True)
+            plugin = _plugin_for_checkin(tmp, result, order)
+            plugin._restore_checkin_background.return_value = CardBackground(
+                mode="fallback", source="fallback"
+            )
+            source = Path(tmp) / "reselected.png"
+            PILImage.new("RGB", (750, 1000), (40, 80, 160)).save(source)
+            plugin._prepare_checkin_background.return_value = CardBackground(
+                image_path=str(source),
+                mode="pixiv_daily",
+                source="lolicon:random",
+                illust_id="778899:0",
+                title="New Art",
+                author="Someone Else",
+                quality="high",
+            )
+            rendered = Path(tmp) / "rendered.jpg"
+            plugin._render_checkin_card.return_value = _make_card(rendered)
+
+            output = await _collect(
+                plugin._handle_checkin(_FakeEvent(order, fail_send=True))
+            )
+
+            self.assertEqual(len(output), 1)
+            self.assertEqual(len(plugin.checkin_store.background_updates), 2)
+            self.assertEqual(
+                plugin.checkin_store.background_updates[0]["illust_id"], "778899:0"
+            )
+            # 发送失败回滚：当天记录背景撤销为占位，未发送缓存与渲染文件清理。
+            self.assertEqual(
+                plugin.checkin_store.background_updates[1]["mode"], "fallback"
+            )
+            self.assertFalse(plugin.checkin_cache.cache_path.exists())
+            self.assertFalse(rendered.exists())
+            plugin._record_checkin_background.assert_not_awaited()
+            plugin._release_checkin_background_claim.assert_awaited_once()
+
+    async def test_duplicate_restore_failure_without_reselect_keeps_placeholder(
+        self,
+    ):
+        with tempfile.TemporaryDirectory() as tmp:
+            order = []
+            record = _record()
+            result = CheckinResult(_profile(), record, duplicate=True)
+            plugin = _plugin_for_checkin(tmp, result, order)
+            plugin._restore_checkin_background.return_value = CardBackground(
+                mode="fallback", source="fallback"
+            )
+            plugin._prepare_checkin_background.return_value = CardBackground(
+                mode="fallback", source="fallback"
+            )
+            rendered = Path(tmp) / "rendered.jpg"
+
+            async def render(*_args, **_kwargs):
+                order.append("render")
+                return _make_card(rendered)
+
+            plugin._render_checkin_card.side_effect = render
+
+            output = await _collect(plugin._handle_checkin(_FakeEvent(order)))
+
+            self.assertEqual(output, [])
+            plugin._prepare_checkin_background.assert_awaited_once()
+            self.assertEqual(plugin.checkin_store.background_updates, [])
+            self.assertNotIn("release_claim", order)
+            self.assertNotIn("usage", order)
+            self.assertLess(order.index("cache_get"), order.index("render"))
+            self.assertTrue(plugin.checkin_cache.cache_path.exists())
+
+    async def test_duplicate_without_recorded_background_does_not_reselect(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            order = []
+            record = _record(with_background=False)
+            result = CheckinResult(_profile(), record, duplicate=True)
+            plugin = _plugin_for_checkin(tmp, result, order)
+            plugin._restore_checkin_background.return_value = CardBackground(
+                mode="fallback", source="fallback"
+            )
+            rendered = Path(tmp) / "rendered.jpg"
+
+            async def render(*_args, **_kwargs):
+                order.append("render")
+                return _make_card(rendered)
+
+            plugin._render_checkin_card.side_effect = render
+
+            output = await _collect(plugin._handle_checkin(_FakeEvent(order)))
+
+            self.assertEqual(output, [])
+            plugin._restore_checkin_background.assert_awaited_once()
+            plugin._prepare_checkin_background.assert_not_awaited()
+            self.assertEqual(plugin.checkin_store.background_updates, [])
+
+
     async def test_first_checkin_persists_content_then_rendered_artwork_and_usage_after_send(
         self,
     ):

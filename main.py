@@ -50,6 +50,7 @@ from .checkin.cache import CheckinCardCache
 from .checkin.commands import CheckinCommandMixin
 from .checkin.greeting import CheckinGreetingGenerator
 from .checkin.holiday import HolidayCalendar
+from .checkin.omnidraw_bridge import OmnidrawBridge
 from .checkin.shop import CheckinShopMixin
 from .pixiv import DeliveryMixin, FiltersMixin, SearchMixin
 from .pixiv.client import PixivClient
@@ -65,7 +66,7 @@ from .plugin_api import PluginWebApi
 
 LOG_PREFIX = "[GetPx]"
 PLUGIN_NAME = "astrbot_plugin_get_px"
-PLUGIN_VERSION = "v3.6.1"
+PLUGIN_VERSION = "v3.7.0"
 WEB_INTERNAL_ERROR_MESSAGE = "服务内部错误，请稍后重试"
 
 AUTO_TRIGGER_PATTERN = r"^/?(来\s*(.*?)(份|个|张|点))(.*?)(福利|色|瑟|涩|塞)?图$"
@@ -140,6 +141,7 @@ class GetPxPlugin(
         """插件加载时初始化 Pixiv 客户端。"""
         data_dir = StarTools.get_data_dir(PLUGIN_NAME)
         self.data_dir = Path(data_dir)
+        self._migrate_grouped_config()
         dedupe_days = self._migrate_dedupe_config()
         self._init_client()
         # SQLite DDL/迁移是同步操作，放入线程池避免阻塞事件循环
@@ -167,6 +169,11 @@ class GetPxPlugin(
         )
         await self.group_safety_service.initialize(self.checkin_store)
         self.checkin_cache = CheckinCardCache(self.data_dir / "checkin_card_cache")
+        self._omnidraw_hint_logged = False
+        if self._cfg_bool("checkin_omnidraw_link_enabled", False):
+            self._omnidraw_bridge = OmnidrawBridge(self.context)
+            self._omnidraw_bridge.log_coexistence_hint()
+            self._omnidraw_hint_logged = True
         await asyncio.to_thread(self.checkin_cache.cleanup_expired, force=True)
         self.holiday_calendar = HolidayCalendar(
             self.data_dir,
@@ -233,6 +240,16 @@ class GetPxPlugin(
 
     async def _web_checkin_import(self):
         return await self._web_api().checkin_import()
+
+    @filter.on_plugin_loaded()
+    async def on_plugin_loaded(self, metadata) -> None:
+        """插件按字母序加载，本插件早于万象画卷初始化；待其加载完成后再补一次共存提示。"""
+        if getattr(metadata, "name", "") != "astrbot_plugin_omnidraw":
+            return
+        bridge = getattr(self, "_omnidraw_bridge", None)
+        if bridge is None:
+            return
+        await asyncio.to_thread(bridge.log_coexistence_hint)
 
     async def terminate(self):
         """插件卸载/停用时清理资源，并让并发调用等待同一清理任务。"""
@@ -485,6 +502,13 @@ class GetPxPlugin(
         async for result in self._handle_buy_checkin_boost(event, days):
             yield result
 
+    @checkin_shop.command("生图")
+    async def cmd_buy_checkin_quota(self, event: AstrMessageEvent, count: str = ""):
+        """购买万象画卷生图额度。"""
+        event.stop_event()
+        async for result in self._handle_buy_checkin_quota(event, count):
+            yield result
+
     @filter.command_group("签到主题")
     def checkin_theme(self):
         """签到主题列表、查看、购买与切换。"""
@@ -664,7 +688,161 @@ class GetPxPlugin(
 
     # ──────────────────────────────────────────────────────────────
     # 配置读取（带类型校验）
+    # ponytail: schema 改 object 分组后存盘为嵌套，_cfg_get 先遍历分组取值、
+    # 找不到再回退扁平 key（兼容旧扁平配置 / 测试用的扁平 dict）。
     # ──────────────────────────────────────────────────────────────
+
+    _CONFIG_GROUP_KEYS = (
+        "pixiv_source",
+        "content_dedupe",
+        "checkin_omnidraw",
+        "checkin_basic",
+        "checkin_shop",
+        "runtime",
+    )
+
+    # 扁平 key -> 分组。用于把旧扁平配置迁移到 object 嵌套结构，
+    # 让 WebUI 配置页能读到用户已配的值（WebUI 按 schema 结构读，不走 _cfg_get 兑底）。
+    _CONFIG_KEY_TO_GROUP = {
+        "pixiv_refresh_token": "pixiv_source",
+        "lolicon_api_url": "pixiv_source",
+        "lolicon_exclude_ai": "pixiv_source",
+        "lolicon_image_proxy_origins": "pixiv_source",
+        "max_count": "pixiv_source",
+        "p_coin_cost": "pixiv_source",
+        "image_quality": "pixiv_source",
+        "auto_downgrade_original_mb": "pixiv_source",
+        "forward_threshold": "pixiv_source",
+        "auto_trigger_enabled": "pixiv_source",
+        "filter_manga": "content_dedupe",
+        "dedupe_days": "content_dedupe",
+        "dedupe_ttl_hours": "content_dedupe",
+        "dedupe_days_migrated": "content_dedupe",
+        "checkin_omnidraw_link_enabled": "checkin_omnidraw",
+        "checkin_omnidraw_quota_cost": "checkin_omnidraw",
+        "checkin_omnidraw_quota_default": "checkin_omnidraw",
+        "checkin_omnidraw_quota_daily_max": "checkin_omnidraw",
+        "checkin_enabled": "checkin_basic",
+        "checkin_bot_name": "checkin_basic",
+        "checkin_card_quality_tier": "checkin_basic",
+        "checkin_avatar_enabled": "checkin_basic",
+        "checkin_greeting_mode": "checkin_basic",
+        "checkin_hitokoto_categories": "checkin_basic",
+        "checkin_ai_greeting_provider_id": "checkin_basic",
+        "checkin_ai_greeting_prompt": "checkin_basic",
+        "checkin_ai_greeting_timeout": "checkin_basic",
+        "checkin_hitokoto_timeout": "checkin_basic",
+        "checkin_background_mode": "checkin_basic",
+        "checkin_background_tag": "checkin_basic",
+        "checkin_custom_background": "checkin_basic",
+        "checkin_background_refresh_cost": "checkin_shop",
+        "checkin_theme_cost": "checkin_shop",
+        "request_timeout": "runtime",
+        "rate_limit_seconds": "runtime",
+        "webui_font_source": "runtime",
+        "_grouped_config_migrated": "runtime",
+    }
+
+    def _cfg_get(self, key: str, default=None):
+        config = getattr(self, "config", None)
+        if config is None:
+            return default
+        for group_key in self._CONFIG_GROUP_KEYS:
+            try:
+                group = config.get(group_key)
+            except Exception:
+                group = None
+            if group is None:
+                continue
+            try:
+                if key in group:
+                    return group[key]
+            except Exception:
+                pass
+        try:
+            return config.get(key, default)
+        except Exception:
+            return default
+
+    def _cfg_contains(self, key: str) -> bool:
+        config = getattr(self, "config", None)
+        if config is None:
+            return False
+        for group_key in self._CONFIG_GROUP_KEYS:
+            try:
+                group = config.get(group_key)
+            except Exception:
+                group = None
+            if group is None:
+                continue
+            try:
+                if key in group:
+                    return True
+            except Exception:
+                pass
+        try:
+            return key in config
+        except Exception:
+            return False
+
+    def _cfg_set(self, key: str, value) -> None:
+        config = getattr(self, "config", None)
+        if config is None:
+            return
+        for group_key in self._CONFIG_GROUP_KEYS:
+            try:
+                group = config.get(group_key)
+            except Exception:
+                group = None
+            if isinstance(group, dict) and key in group:
+                group[key] = value
+                return
+        config[key] = value
+
+    def _migrate_grouped_config(self) -> None:
+        """把旧扁平配置值搬到 object 分组嵌套结构，避免 WebUI 配置页显示为空。
+
+        WebUI 按 schema 结构读 config[组][键]，旧扁平值不在组里会被显示为默认值，
+        保存后还可能被 AstrBot 当成“schema 不存在”的键清理掉。这里把扁平值搬进
+        对应组，留 _grouped_config_migrated 标志避免重复搬。"""
+        config = getattr(self, "config", None)
+        if config is None:
+            return
+        if self._cfg_bool("_grouped_config_migrated", False):
+            return
+        moved = []
+        for key, group_key in self._CONFIG_KEY_TO_GROUP.items():
+            if key == "_grouped_config_migrated":
+                continue
+            try:
+                flat_val = config.get(key, None)
+            except Exception:
+                flat_val = None
+            if flat_val is None:
+                continue
+            group = config.get(group_key)
+            if not isinstance(group, dict):
+                group = {}
+                config[group_key] = group
+            # 扁平值优先，覆盖组里已有的 schema 默认值
+            group[key] = flat_val
+            moved.append(key)
+        self._cfg_set("_grouped_config_migrated", True)
+        save_config = getattr(config, "save_config", None)
+        persisted = False
+        if callable(save_config):
+            try:
+                save_config()
+                persisted = True
+            except Exception as exc:
+                logger.warning(
+                    f"{LOG_PREFIX} 分组配置迁移保存失败: "
+                    f"error_type={type(exc).__name__}"
+                )
+        logger.info(
+            f"{LOG_PREFIX} 已迁移扁平配置到分组: "
+            f"count={len(moved)} persisted={persisted}"
+        )
 
     def _migrate_dedupe_config(self) -> int:
         config = getattr(self, "config", None)
@@ -672,8 +850,8 @@ class GetPxPlugin(
             return 1
         if not self._cfg_bool("dedupe_days_migrated", False):
             legacy_value = self._cfg_float("dedupe_ttl_hours", 24.0, 0.0, 24.0)
-            config["dedupe_days"] = 0 if legacy_value <= 0 else 1
-            config["dedupe_days_migrated"] = True
+            self._cfg_set("dedupe_days", 0 if legacy_value <= 0 else 1)
+            self._cfg_set("dedupe_days_migrated", True)
             persisted = False
             save_config = getattr(config, "save_config", None)
             if callable(save_config):
@@ -688,16 +866,17 @@ class GetPxPlugin(
             logger.info(
                 f"{LOG_PREFIX} 已迁移旧去重配置: "
                 f"dedupe_ttl_hours={legacy_value:g} -> "
-                f"dedupe_days={config['dedupe_days']}, persisted={persisted}"
+                f"dedupe_days={self._cfg_int('dedupe_days', 1, 0, 7)}, "
+                f"persisted={persisted}"
             )
         return self._cfg_int("dedupe_days", 1, 0, 7)
 
     def _cfg_str(self, key: str, default: str = "") -> str:
-        val = self.config.get(key, default)
+        val = self._cfg_get(key, default)
         return str(val).strip() if val is not None else default
 
     def _cfg_int(self, key: str, default: int, lo: int, hi: int) -> int:
-        raw = self.config.get(key, default)
+        raw = self._cfg_get(key, default)
         if isinstance(raw, (bool, float)):
             return default
         try:
@@ -708,19 +887,19 @@ class GetPxPlugin(
 
     def _forward_threshold(self) -> int:
         """Return the merged-forward threshold, accepting the retired bool setting."""
-        if "forward_threshold" in self.config:
+        if self._cfg_contains("forward_threshold"):
             return self._cfg_int("forward_threshold", 1, 0, MAX_IMAGE_COUNT)
         return 0 if self._cfg_bool("send_as_forward", True) else MAX_IMAGE_COUNT
 
     def _cfg_float(self, key: str, default: float, lo: float, hi: float) -> float:
         try:
-            val = float(self.config.get(key, default))
+            val = float(self._cfg_get(key, default))
         except (TypeError, ValueError):
             return default
         return val if lo <= val <= hi else default
 
     def _cfg_bool(self, key: str, default: bool) -> bool:
-        val = self.config.get(key, default)
+        val = self._cfg_get(key, default)
         if isinstance(val, bool):
             return val
         if isinstance(val, str):
