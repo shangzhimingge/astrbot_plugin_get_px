@@ -377,9 +377,17 @@ def test_grouped_policy_compat_migration_is_atomic_on_save_failure(pre_materiali
     private_ref = [private_entry]
     config = Config({CONFIG_KEY: group_ref, PRIVATE_CONFIG_KEY: private_ref,
                      MIGRATION_KEY: True, "_grouped_config_migrated": True})
+    runtime_ref = {"_grouped_config_migrated": True}
+    config["runtime"] = runtime_ref
+    content_ref = None
+    nested_group_ref = None
+    nested_private_ref = None
     if pre_materialized:
-        config["content_dedupe"] = {CONFIG_KEY: [], PRIVATE_CONFIG_KEY: [],
-                                     MIGRATION_KEY: False}
+        nested_group_ref, nested_private_ref = [], []
+        content_ref = {CONFIG_KEY: nested_group_ref, PRIVATE_CONFIG_KEY: nested_private_ref,
+                       MIGRATION_KEY: False}
+        config["content_dedupe"] = content_ref
+    runtime_before = deepcopy(runtime_ref)
     config["fail"] = True
     repo = Path(__file__).resolve().parents[1]
     sys.path.insert(0, str(repo.parent))
@@ -394,7 +402,11 @@ def test_grouped_policy_compat_migration_is_atomic_on_save_failure(pre_materiali
     assert config[CONFIG_KEY] == [group_entry]
     assert config[PRIVATE_CONFIG_KEY] == [private_entry]
     assert config[MIGRATION_KEY] is True
+    assert config["runtime"] is runtime_ref and config["runtime"] == runtime_before
     if pre_materialized:
+        assert config["content_dedupe"] is content_ref
+        assert config["content_dedupe"][CONFIG_KEY] is nested_group_ref
+        assert config["content_dedupe"][PRIVATE_CONFIG_KEY] is nested_private_ref
         assert config["content_dedupe"][CONFIG_KEY] == []
         assert config["content_dedupe"][PRIVATE_CONFIG_KEY] == []
         assert config["content_dedupe"][MIGRATION_KEY] is False
@@ -407,13 +419,14 @@ def test_lolicon_exclude_ai_document_contracts_are_consistent():
     import json
     schema = json.loads(Path("_conf_schema.json").read_text(encoding="utf-8"))
     hint = schema["pixiv_source"]["items"]["lolicon_exclude_ai"]["hint"]
-    readme = Path("README.md").read_text(encoding="utf-8")
-    config_doc = Path("docs/project/configuration.md").read_text(encoding="utf-8")
-    combined = "\n".join((hint, readme, config_doc))
-    assert "R18 始终关闭" not in combined
-    assert "AI" in hint and "当前会话" in combined
+    readme_line = next(line for line in Path("README.md").read_text(encoding="utf-8").splitlines()
+                       if "`lolicon_exclude_ai`" in line)
+    config_line = next(line for line in Path("docs/project/configuration.md").read_text(encoding="utf-8").splitlines()
+                       if "`lolicon_exclude_ai`" in line)
+    for segment in (hint, readme_line, config_line):
+        assert "AI" in segment and "当前会话" in segment and "强制普通分级" in segment
+        assert "R18 始终关闭" not in segment
     assert "lolicon_exclude_ai" in schema["pixiv_source"]["items"]
-    assert "lolicon_exclude_ai" in readme and "lolicon_exclude_ai" in config_doc
 
 
 @pytest.mark.asyncio
@@ -435,7 +448,12 @@ async def test_nested_apply_all_failure_rolls_back_lists_markers_and_runtime():
     config.save_calls = 0
     group_ref, private_ref = group_nested, private_nested
     group_before, private_before = deepcopy(group_nested), deepcopy(private_nested)
-    runtime_before = deepcopy(config["runtime"])
+    runtime_ref = config["runtime"]
+    runtime_before = deepcopy(runtime_ref)
+    service_groups_before = await service.list_policies()
+    service_private_before = await service.list_private_policies()
+    top_marker_present = MIGRATION_KEY in config
+    top_marker_before = config.get(MIGRATION_KEY)
     compat_refs = (config[CONFIG_KEY], config[PRIVATE_CONFIG_KEY])
     compat_before = (deepcopy(compat_refs[0]), deepcopy(compat_refs[1]))
     config["fail"] = True
@@ -448,4 +466,8 @@ async def test_nested_apply_all_failure_rolls_back_lists_markers_and_runtime():
     assert config[CONFIG_KEY] is compat_refs[0] and config[PRIVATE_CONFIG_KEY] is compat_refs[1]
     assert config[CONFIG_KEY] == compat_before[0] and config[PRIVATE_CONFIG_KEY] == compat_before[1]
     assert config["content_dedupe"][MIGRATION_KEY] is True
-    assert config["runtime"] == runtime_before
+    assert config["runtime"] is runtime_ref and config["runtime"] == runtime_before
+    assert await service.list_policies() == service_groups_before
+    assert await service.list_private_policies() == service_private_before
+    assert (MIGRATION_KEY in config) is top_marker_present
+    assert config.get(MIGRATION_KEY) == top_marker_before
