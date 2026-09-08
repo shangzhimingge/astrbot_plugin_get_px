@@ -489,8 +489,7 @@ class SessionSafetyService:
             value = list(source[source_id].get(field, []))
             group_candidate = deepcopy(self._policies) if target in {"group", "all"} else None
             private_candidate = deepcopy(self._private_policies) if target in {"private", "all"} else None
-            changed_group = 0
-            changed_private = 0
+            changed_group = changed_private = 0
             for candidate, count in ((group_candidate, "group"), (private_candidate, "private")):
                 if candidate is None:
                     continue
