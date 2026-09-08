@@ -337,3 +337,29 @@ async def test_grouped_config_failed_save_restores_nested_identity_and_compatibi
     assert grouped[CONFIG_KEY] == before
     assert config[CONFIG_KEY] == []
     assert config[MIGRATION_KEY] is True
+
+
+@pytest.mark.asyncio
+async def test_grouped_config_repairs_template_compatibility_after_global_marker():
+    group_legacy = {"__template_key": "group_policy", "group_id": "g2",
+                    "general_only_enabled": True, "builtin_terms_enabled": True}
+    private_legacy = {"__template_key": "private_policy", "user_id": "u2",
+                      "general_only_enabled": False, "builtin_terms_enabled": True}
+    grouped = {CONFIG_KEY: [], PRIVATE_CONFIG_KEY: [], MIGRATION_KEY: False}
+    config = Config({"content_dedupe": grouped, CONFIG_KEY: [group_legacy],
+                     PRIVATE_CONFIG_KEY: [private_legacy], MIGRATION_KEY: True,
+                     "_grouped_config_migrated": True})
+    import importlib
+    import sys
+    repo = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(repo.parent))
+    try:
+        GetPxPlugin = importlib.import_module(f"{repo.name}.main").GetPxPlugin
+        plugin = GetPxPlugin.__new__(GetPxPlugin)
+        plugin.config = config
+        plugin._migrate_grouped_config()
+    finally:
+        sys.path.remove(str(repo.parent))
+    assert grouped[CONFIG_KEY] == [group_legacy]
+    assert grouped[PRIVATE_CONFIG_KEY] == [private_legacy]
+    assert grouped[MIGRATION_KEY] is True

@@ -716,6 +716,8 @@ class MainErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
             record = _record()
             result = CheckinResult(_profile(), record, duplicate=True)
             plugin = _plugin_for_checkin(tmp, result, order)
+            policy = ContentSafetyPolicy(False, False, "group-a")
+            plugin._content_safety_policy = AsyncMock(return_value=policy)
             plugin._restore_checkin_background.return_value = CardBackground(
                 mode="fallback", source="fallback"
             )
@@ -749,6 +751,14 @@ class MainErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(output, [])
             plugin._restore_checkin_background.assert_awaited_once()
             plugin._prepare_checkin_background.assert_awaited_once()
+            self.assertIs(
+                plugin._prepare_checkin_background.await_args.kwargs["policy"],
+                policy,
+            )
+            self.assertEqual(
+                plugin.checkin_cache.key_inputs[0]["view_model"]["content_safety_policy"],
+                policy.cache_identity(),
+            )
             self.assertEqual(len(plugin.checkin_store.background_updates), 1)
             update = plugin.checkin_store.background_updates[0]
             self.assertEqual(update["illust_id"], "778899:0")

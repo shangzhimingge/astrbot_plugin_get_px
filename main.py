@@ -811,7 +811,32 @@ class GetPxPlugin(
         config = getattr(self, "config", None)
         if config is None:
             return
+        policy_keys = {"group_content_safety_policies",
+                       "private_content_safety_policies",
+                       "group_content_safety_policies_migrated"}
         if self._cfg_bool("_grouped_config_migrated", False):
+            # AstrBot may have persisted the old invisible template lists before
+            # the grouped migration marker was written. Repair that state even
+            # after the general migration has completed.
+            group = config.get("content_dedupe")
+            moved = []
+            if isinstance(group, dict):
+                for key in policy_keys:
+                    legacy = config.get(key)
+                    nested = group.get(key)
+                    if key == "group_content_safety_policies_migrated":
+                        if bool(legacy) and not bool(nested):
+                            group[key] = True; moved.append(key)
+                    elif (not nested and isinstance(legacy, list) and
+                          any(isinstance(item, dict) and item.get("__template_key")
+                              for item in legacy)):
+                        group[key] = legacy; moved.append(key)
+            if moved:
+                saver = getattr(config, "save_config", None)
+                if callable(saver):
+                    try: saver()
+                    except Exception as exc:
+                        logger.warning(f"{LOG_PREFIX} 会话策略兼容迁移保存失败: error_type={type(exc).__name__}")
             return
         moved = []
         for key, group_key in self._CONFIG_KEY_TO_GROUP.items():
@@ -829,7 +854,7 @@ class GetPxPlugin(
                 config[group_key] = group
             # 策略模板同时有 invisible 扁平兼容键；仅在嵌套值为空时
             # 迁移非空旧值，避免框架默认的 [] 覆盖现有分组策略。
-            if key in {"group_content_safety_policies", "private_content_safety_policies", "group_content_safety_policies_migrated"}:
+            if key in policy_keys:
                 if group.get(key) and not flat_val:
                     continue
             group[key] = flat_val
