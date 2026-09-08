@@ -363,3 +363,40 @@ async def test_grouped_config_repairs_template_compatibility_after_global_marker
     assert grouped[CONFIG_KEY] == [group_legacy]
     assert grouped[PRIVATE_CONFIG_KEY] == [private_legacy]
     assert grouped[MIGRATION_KEY] is True
+
+
+@pytest.mark.parametrize("pre_materialized", [True, False])
+def test_grouped_policy_compat_migration_is_atomic_on_save_failure(pre_materialized):
+    import importlib
+    import sys
+    group_entry = {"__template_key": "group_policy", "group_id": "g9",
+                   "general_only_enabled": True, "builtin_terms_enabled": True}
+    private_entry = {"__template_key": "private_policy", "user_id": "u9",
+                     "general_only_enabled": False, "builtin_terms_enabled": True}
+    group_ref = [group_entry]
+    private_ref = [private_entry]
+    config = Config({CONFIG_KEY: group_ref, PRIVATE_CONFIG_KEY: private_ref,
+                     MIGRATION_KEY: True, "_grouped_config_migrated": True})
+    if pre_materialized:
+        config["content_dedupe"] = {CONFIG_KEY: [], PRIVATE_CONFIG_KEY: [],
+                                     MIGRATION_KEY: False}
+    config["fail"] = True
+    repo = Path(__file__).resolve().parents[1]
+    sys.path.insert(0, str(repo.parent))
+    try:
+        GetPxPlugin = importlib.import_module(f"{repo.name}.main").GetPxPlugin
+        plugin = GetPxPlugin.__new__(GetPxPlugin)
+        plugin.config = config
+        plugin._migrate_grouped_config()
+    finally:
+        sys.path.remove(str(repo.parent))
+    assert config[CONFIG_KEY] is group_ref and config[PRIVATE_CONFIG_KEY] is private_ref
+    assert config[CONFIG_KEY] == [group_entry]
+    assert config[PRIVATE_CONFIG_KEY] == [private_entry]
+    assert config[MIGRATION_KEY] is True
+    if pre_materialized:
+        assert config["content_dedupe"][CONFIG_KEY] == []
+        assert config["content_dedupe"][PRIVATE_CONFIG_KEY] == []
+        assert config["content_dedupe"][MIGRATION_KEY] is False
+    else:
+        assert "content_dedupe" not in config

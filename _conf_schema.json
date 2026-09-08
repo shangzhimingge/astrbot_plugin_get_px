@@ -20,7 +20,7 @@
         "description": "Lolicon 排除 AI 作品",
         "type": "bool",
         "default": true,
-        "hint": "开启后向 Lolicon API 传递 excludeAI=true。R18 始终固定为关闭。"
+        "hint": "仅控制 Lolicon 的 AI 作品筛选（excludeAI=true/false）；R18 与普通作品混合由当前会话的“强制普通分级”策略决定。"
       },
       "lolicon_image_proxy_origins": {
         "description": "Lolicon 图片反代地址",

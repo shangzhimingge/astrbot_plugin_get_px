@@ -8,7 +8,7 @@
 | --- | --- | --- | --- |
 | `pixiv_refresh_token` | `string` | 空 | Lolicon 主源失败时用于 Pixiv 搜索或推荐作品回退；留空不影响 Lolicon 发图 |
 | `lolicon_api_url` | `string` | `https://api.lolicon.app/setu/v2` | 首选图片源地址；留空停用 Lolicon，仅 Pixiv 回退 |
-| `lolicon_exclude_ai` | `bool` | `true` | 向 Lolicon API 传 excludeAI=true；R18 始终关闭 |
+| `lolicon_exclude_ai` | `bool` | `true` | 仅向 Lolicon API 传递 excludeAI=true/false；R18 与普通混合由当前会话强制普通分级决定 |
 | `lolicon_image_proxy_origins` | `text` | 空 | 每行一个 http(s) origin，最多 5 个按序尝试；仅改写允许列表内 Pixiv 图片主机 |
 | `max_count` | `int` | `5` | 单次指令最多发送张数，范围 1–20 |
 | `p_coin_cost` | `int` | `20` | `/p` 成功发图每张金币，范围 0–200；0 免费 |

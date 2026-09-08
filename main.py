@@ -36,6 +36,7 @@ from pathlib import Path
 import re
 import time
 import weakref
+from copy import deepcopy
 
 from astrbot.api.all import AstrBotConfig, Image, logger
 from astrbot.api.event import AstrMessageEvent, filter
@@ -815,12 +816,21 @@ class GetPxPlugin(
                        "private_content_safety_policies",
                        "group_content_safety_policies_migrated"}
         if self._cfg_bool("_grouped_config_migrated", False):
-            # AstrBot may have persisted the old invisible template lists before
-            # the grouped migration marker was written. Repair that state even
-            # after the general migration has completed.
-            group = config.get("content_dedupe")
+            # Repair old invisible policy templates transactionally. AstrBot may
+            # pre-materialize schema defaults, or omit the three keys entirely.
+            group_present = isinstance(config.get("content_dedupe"), dict)
+            group = config.get("content_dedupe") if group_present else None
+            group_copy = deepcopy(group) if group_present else None
+            tracked = (*policy_keys, "_grouped_config_migrated")
+            root_snapshot = {
+                key: (key in config, config.get(key), deepcopy(config.get(key)))
+                for key in tracked
+            }
             moved = []
-            if isinstance(group, dict):
+            try:
+                if not group_present:
+                    group = {}
+                    config["content_dedupe"] = group
                 for key in policy_keys:
                     legacy = config.get(key)
                     nested = group.get(key)
@@ -830,13 +840,27 @@ class GetPxPlugin(
                     elif (not nested and isinstance(legacy, list) and
                           any(isinstance(item, dict) and item.get("__template_key")
                               for item in legacy)):
-                        group[key] = legacy; moved.append(key)
-            if moved:
-                saver = getattr(config, "save_config", None)
-                if callable(saver):
-                    try: saver()
-                    except Exception as exc:
-                        logger.warning(f"{LOG_PREFIX} 会话策略兼容迁移保存失败: error_type={type(exc).__name__}")
+                        group[key] = deepcopy(legacy); moved.append(key)
+                if moved:
+                    saver = getattr(config, "save_config", None)
+                    if not callable(saver):
+                        raise RuntimeError("config.save_config is required")
+                    saver()
+            except Exception as exc:
+                if group_present:
+                    group.clear(); group.update(deepcopy(group_copy))
+                else:
+                    config.pop("content_dedupe", None)
+                for key, (present, value, value_copy) in root_snapshot.items():
+                    if present:
+                        current = config.get(key)
+                        if isinstance(current, list) and isinstance(value, list):
+                            current[:] = deepcopy(value_copy); config[key] = current
+                        else:
+                            config[key] = deepcopy(value_copy)
+                    else:
+                        config.pop(key, None)
+                logger.warning(f"{LOG_PREFIX} 会话策略兼容迁移保存失败: error_type={type(exc).__name__}")
             return
         moved = []
         for key, group_key in self._CONFIG_KEY_TO_GROUP.items():
