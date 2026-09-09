@@ -9,9 +9,9 @@ from typing import Any
 # import modules directly from the checkout root. Keep both contexts explicit
 # so a failed package import never falls through to a top-level fallback.
 if __package__:
-    from .pixiv.safety import normalize_safety_text
+    from .pixiv.safety import normalize_safety_text, normalize_safety_term_identity
 else:
-    from pixiv.safety import normalize_safety_text
+    from pixiv.safety import normalize_safety_text, normalize_safety_term_identity
 
 try:
     from astrbot.api.all import logger
@@ -46,7 +46,7 @@ def _normalize_terms(value: object, *, strict: bool = True, field: str = "custom
             if strict:
                 raise ValueError(f"{field}[{index}] is required")
             continue
-        result.setdefault(normalized, display)
+        result.setdefault(normalize_safety_term_identity(display), display)
     return [result[key] for key in sorted(result, key=lambda k: (k, result[k]))]
 
 

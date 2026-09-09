@@ -32,7 +32,8 @@ export function policyBatchRefreshScopes(target) {
   return target === "all" ? ["group", "private"] : target === "group" || target === "private" ? [target] : [];
 }
 
-const normalizeTerm = (value) => String(value ?? "").normalize("NFKC").toLocaleLowerCase("zh-CN").replace(/[\s_\-‐‑‒–—―·・.]+/gu, "");
+const normalizeTerm = (value) => String(value ?? "").normalize("NFKC").trim().toLocaleLowerCase("zh-CN");
+const normalizeTermMatchKey = (value) => normalizeTerm(value).replace(/[\s_\-‐‑‒–—―·・.]+/gu, "");
 const copyRecord = (record) => (record ? {
   ...record,
   custom_terms: [...(record.custom_terms || [])],
@@ -145,7 +146,7 @@ export function discardPolicyDraft(bucket) {
 export function addPolicyListItem(bucket, field, value) {
   if (!["custom_terms", "blacklisted_illust_ids"].includes(field)) throw new Error("不支持的策略列表");
   const item = String(value ?? "").trim();
-  if (field === "custom_terms" && !normalizeTerm(item)) throw new Error("屏蔽词不能为空");
+  if (field === "custom_terms" && !normalizeTermMatchKey(item)) throw new Error("屏蔽词不能为空");
   if (field === "blacklisted_illust_ids" && (!/^\d+$/.test(item) || Number(item) <= 0)) throw new Error("作品 ID 必须是正整数");
   const normalized = field === "blacklisted_illust_ids" ? String(Number(item)) : item;
   const draft = copyRecord(bucket.draft); const values = [...(draft[field] || [])];

@@ -74,6 +74,11 @@ def test_content_safety_policy_copies_mutable_inputs():
     assert policy.custom_terms == ("alpha",) and policy.blacklisted_illust_ids == ("1",)
 
 
+def test_content_safety_policy_keeps_punctuation_variants_in_snapshot():
+    policy = ContentSafetyPolicy(custom_terms=("r18g", "r-18g"))
+    assert policy.custom_terms == ("r-18g", "r18g")
+
+
 class FilteringTest(unittest.TestCase):
     def test_filter_manga_removes_manga_from_mixed_results(self):
         illusts = [

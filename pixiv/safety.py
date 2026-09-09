@@ -24,7 +24,7 @@ class ContentSafetyPolicy:
             if not isinstance(value, str) or not value.strip() or not normalize_safety_text(value.strip()):
                 raise ValueError(f"custom_terms[{index}] is invalid")
             display = value.strip()
-            terms_by_key.setdefault(normalize_safety_text(display), display)
+            terms_by_key.setdefault(normalize_safety_term_identity(display), display)
         terms = [terms_by_key[key] for key in sorted(terms_by_key, key=lambda k: (k, terms_by_key[k]))]
         ids = set()
         for index, value in enumerate(self.blacklisted_illust_ids):
@@ -93,6 +93,11 @@ BUILTIN_SAFETY_TERMS = (
 def normalize_safety_text(value: object) -> str:
     text = unicodedata.normalize("NFKC", str(value or "")).casefold()
     return re.sub(r"[\s_\-‐‑‒–—―·・.]+", "", text)
+
+
+def normalize_safety_term_identity(value: object) -> str:
+    """Normalize a stored term for duplicate identity without dropping punctuation."""
+    return unicodedata.normalize("NFKC", str(value or "").strip()).casefold()
 
 
 def normalized_builtin_terms() -> frozenset[str]:

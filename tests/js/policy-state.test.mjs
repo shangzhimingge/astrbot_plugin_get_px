@@ -48,6 +48,15 @@ test("separator-only terms are rejected without changing the draft", () => {
   assert.deepEqual(bucket.draft.custom_terms, ["keep"]);
 });
 
+test("punctuation variants are stored as separate terms", () => {
+  let bucket = selectPolicyRecord(createPolicyBucket(), "group", "1");
+  bucket = { ...bucket, draft: { group_id: "1", custom_terms: [], blacklisted_illust_ids: [] }, baseline: { group_id: "1", custom_terms: [], blacklisted_illust_ids: [] } };
+  bucket = addPolicyListItem(bucket, "custom_terms", "r18g");
+  bucket = addPolicyListItem(bucket, "custom_terms", "r-18g");
+  assert.deepEqual(bucket.draft.custom_terms, ["r-18g", "r18g"]);
+  assert.throws(() => addPolicyListItem(bucket, "custom_terms", "Ｒ－１８Ｇ"), /已存在/);
+});
+
 test("scope definitions map independent fields and endpoints", () => {
   assert.equal(POLICY_SCOPES.group.idKey, "group_id");
   assert.equal(POLICY_SCOPES.private.idKey, "user_id");

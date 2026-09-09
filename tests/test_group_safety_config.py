@@ -64,6 +64,15 @@ async def test_independent_lists_tolerant_warning_and_strict_invalid_matrix(monk
         with pytest.raises(ValueError):
             await service.upsert_group_policy("g1", general_only_enabled=True,builtin_terms_enabled=False,**{field:value})
 
+
+def test_custom_terms_preserve_punctuation_variants_as_distinct_entries():
+    entries, warnings = normalize_policy_entries([{
+        "group_id": "g1", "general_only_enabled": True,
+        "builtin_terms_enabled": False, "custom_terms": ["r18g", "r-18g"],
+    }])
+    assert not warnings
+    assert entries[0]["custom_terms"] == ["r-18g", "r18g"]
+
 @pytest.mark.asyncio
 async def test_apply_policy_field_group_private_all_counts_and_only_field():
     c=Config({CONFIG_KEY:[],PRIVATE_CONFIG_KEY:[],MIGRATION_KEY:True})
