@@ -328,6 +328,7 @@ class SessionSafetyService:
 
     async def initialize(self, legacy_store):
         async with self._lock:
+            migration_succeeded = True
             raw_private = self._get_config(PRIVATE_CONFIG_KEY, [])
             private_entries, warnings = _normalize_entries(raw_private, private=True)
             self._log_warnings("private config", warnings)
@@ -338,6 +339,8 @@ class SessionSafetyService:
                         private=True, candidate=deepcopy(self._private_policies)
                     )
                 except Exception as exc:
+                    self._install([], private=True)
+                    migration_succeeded = False
                     self._log_warnings(
                         "private config",
                         [f"save failed error_type={type(exc).__name__}"],
@@ -356,13 +359,14 @@ class SessionSafetyService:
                     self._log_warnings("legacy", warnings)
                 except Exception as exc:
                     self._install([], private=False)
+                    migration_succeeded = False
                     self._log_warnings(
                         "legacy", [f"read failed error_type={type(exc).__name__}"]
                     )
-                    return
+                    return False
             self._install(group_entries, private=False)
             if isinstance(raw_group, list) and migrated and raw_group == group_entries:
-                return
+                return migration_succeeded
             try:
                 self._save_scope(
                     private=False,
@@ -371,10 +375,12 @@ class SessionSafetyService:
                 )
             except Exception as exc:
                 self._install([], private=False)
+                migration_succeeded = False
                 self._log_warnings(
                     "legacy" if use_legacy else "config",
                     [f"save failed error_type={type(exc).__name__}"],
                 )
+            return migration_succeeded
 
     async def _list(self, *, private: bool = False):
         async with self._lock:

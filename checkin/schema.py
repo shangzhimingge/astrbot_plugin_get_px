@@ -8,7 +8,8 @@ import sqlite3
 from .themes import CHECKIN_THEMES
 
 
-CHECKIN_DB_SCHEMA_VERSION = 3
+CHECKIN_DB_SCHEMA_VERSION = 2
+LEGACY_GROUP_POLICY_SCHEMA_VERSION = 3
 
 
 class UnversionedCheckinDatabaseError(RuntimeError):
@@ -25,7 +26,12 @@ class SchemaMixin:
     def _init_db(self) -> None:
         with closing(self._connect()) as conn:
             schema_version = int(conn.execute("PRAGMA user_version").fetchone()[0])
-            if schema_version not in (0, 1, 2, CHECKIN_DB_SCHEMA_VERSION):
+            if schema_version not in (
+                0,
+                1,
+                CHECKIN_DB_SCHEMA_VERSION,
+                LEGACY_GROUP_POLICY_SCHEMA_VERSION,
+            ):
                 raise RuntimeError(
                     f"unsupported check-in database schema: {schema_version}"
                 )
@@ -36,13 +42,21 @@ class SchemaMixin:
                 raise UnversionedCheckinDatabaseError(
                     "unversioned non-empty check-in database is unsupported"
                 )
-            if schema_version in (1, 2):
+            if schema_version == LEGACY_GROUP_POLICY_SCHEMA_VERSION:
+                # The one-release schema is intentionally left byte-for-byte
+                # untouched until the configuration migration has committed.
+                return
+            if schema_version == 1:
                 self._backup_before_migration(conn, schema_version)
             # WAL 切换不能在事务内执行，需先于 BEGIN IMMEDIATE。
             conn.execute("PRAGMA journal_mode = WAL")
             conn.execute("BEGIN IMMEDIATE")
             try:
-                if schema_version in (1, 2, CHECKIN_DB_SCHEMA_VERSION):
+                if schema_version in (
+                    1,
+                    CHECKIN_DB_SCHEMA_VERSION,
+                    LEGACY_GROUP_POLICY_SCHEMA_VERSION,
+                ):
                     self._ensure_v2_record_columns(conn)
                 self._create_checkin_schema(conn)
                 self._sync_builtin_themes(conn)
@@ -63,6 +77,41 @@ class SchemaMixin:
         with closing(sqlite3.connect(backup_path)) as target:
             source.backup(target)
         return backup_path
+
+    def has_legacy_group_policy_table(self) -> bool:
+        with closing(self._connect()) as conn:
+            return bool(
+                conn.execute(
+                    "SELECT 1 FROM sqlite_master "
+                    "WHERE type = 'table' AND name = 'group_content_safety'"
+                ).fetchone()
+            )
+
+    def converge_legacy_group_policy_schema(self) -> dict[str, object]:
+        """Back up schema3, retain its tables, and lower only ``user_version``."""
+        with closing(self._connect()) as conn:
+            version = int(conn.execute("PRAGMA user_version").fetchone()[0])
+            if version != LEGACY_GROUP_POLICY_SCHEMA_VERSION:
+                return {
+                    "from_version": version,
+                    "to_version": version,
+                    "backup_path": None,
+                    "changed": False,
+                }
+            backup_path = self._backup_before_migration(conn, version)
+            conn.execute("BEGIN IMMEDIATE")
+            try:
+                conn.execute(f"PRAGMA user_version = {CHECKIN_DB_SCHEMA_VERSION}")
+                conn.commit()
+            except Exception:
+                conn.rollback()
+                raise
+            return {
+                "from_version": version,
+                "to_version": CHECKIN_DB_SCHEMA_VERSION,
+                "backup_path": str(backup_path),
+                "changed": True,
+            }
 
     @staticmethod
     def _ensure_v2_record_columns(conn: sqlite3.Connection) -> None:
@@ -216,19 +265,6 @@ class SchemaMixin:
                 last_seen_at TEXT NOT NULL,
                 PRIMARY KEY (date_key, group_id, user_id),
                 FOREIGN KEY (user_id) REFERENCES checkin_users(user_id) ON DELETE CASCADE
-            )
-            """
-        )
-        conn.execute(
-            """
-            CREATE TABLE IF NOT EXISTS group_content_safety (
-                group_id TEXT PRIMARY KEY,
-                general_only_enabled INTEGER NOT NULL DEFAULT 1
-                    CHECK (general_only_enabled IN (0, 1)),
-                builtin_terms_enabled INTEGER NOT NULL DEFAULT 1
-                    CHECK (builtin_terms_enabled IN (0, 1)),
-                updated_by TEXT NOT NULL DEFAULT '',
-                updated_at TEXT NOT NULL
             )
             """
         )

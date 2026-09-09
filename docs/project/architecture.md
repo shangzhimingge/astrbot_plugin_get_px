@@ -80,7 +80,7 @@ python -m pytest -q
 ```
 # 会话内容安全策略
 
-`SessionSafetyService` 分别维护 `group_content_safety_policies` 与 `private_content_safety_policies` 两个配置命名空间。旧 `group_content_safety` SQLite 表只作为群策略的一次性迁移来源；私聊写入不会修改群配置或迁移标记，任一作用域保存失败只回滚该作用域。
+`SessionSafetyService` 分别维护 `group_content_safety_policies` 与 `private_content_safety_policies` 两个配置命名空间。旧 `group_content_safety` SQLite 表只作为群策略的一次性迁移来源；配置保存成功后才备份并将数据库 schema 收敛回 v2，同时永久保留旧表与历史行；保存或收敛失败时保留 v3。新建 v2 数据库不创建旧表。私聊写入不会修改群配置或迁移标记，任一作用域保存失败只回滚该作用域。
 
 每次搜索、签到背景选择、日历背景或已保存在线背景恢复时，入口只解析一次不可变 `ContentSafetyPolicy`，随后传给 Lolicon 取源、Pixiv 回退、本地候选过滤和最终复核。群消息只查询群 ID，私聊只查询发送者用户 ID；缺失记录、无效 ID 或读取异常均使用严格策略，且不跨作用域回退。管理页黑名单缩略图没有会话上下文，因此始终采用严格策略。
 

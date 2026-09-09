@@ -90,6 +90,8 @@
 > **跨版本升级与签到数据**
 >
 > 从旧版本直接升级后如果发现签到数据缺失，请先安装 [v3.0.0](https://github.com/shitianyaa/astrbot_plugin_get_px/releases/tag/v3.0.0)，启动插件一次并确认旧签到数据迁移完成，再升级到最新版本。操作前请备份 AstrBot 插件数据目录中的 `checkin.sqlite3` 和 `checkin_backups/`，不要删除或覆盖原数据目录。
+>
+> 若日志出现 `unsupported check-in database schema: 3`，请使用包含 schema3 兼容收敛逻辑的版本启动一次。插件会先把旧群策略迁移到配置并保存，随后备份数据库、仅将 `user_version` 收敛为 2，并保留 `group_content_safety` 表及历史行；配置保存或备份失败时不会修改旧数据库。
 
 > [!IMPORTANT]
 > **关于 T2I 渲染服务**

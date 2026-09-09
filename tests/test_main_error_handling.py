@@ -17,6 +17,7 @@ from PIL import Image as PILImage
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 from astrbot_plugin_get_px.main import GetPxPlugin, PLUGIN_VERSION  # noqa: E402
+import astrbot_plugin_get_px.main as main_module  # noqa: E402
 from astrbot_plugin_get_px.pixiv.constants import MAX_IMAGE_COUNT  # noqa: E402
 from astrbot_plugin_get_px.checkin import (  # noqa: E402
     CheckinProfile,
@@ -479,6 +480,175 @@ class MainErrorHandlingTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("缺少 schema 版本号", log_text)
         self.assertIn("3.0.0", log_text)
         self.assertIn(PLUGIN_VERSION, log_text)
+
+    async def test_initialize_migrates_policy_before_convergence_and_logs_result(self):
+        plugin = object.__new__(GetPxPlugin)
+        order = []
+        plugin.config = {}
+        plugin.context = SimpleNamespace()
+        plugin._migrate_grouped_config = Mock()
+        plugin._migrate_dedupe_config = Mock(return_value=1)
+        plugin._init_client = Mock()
+        plugin._cfg_bool = Mock(return_value=False)
+
+        class FakeImageIndex:
+            async def cleanup_old_days(self, *, trigger="manual"):
+                return None
+
+        class FakeStore:
+            _db_path = Path("checkin.sqlite3")
+
+            def __init__(self):
+                order.append("store")
+
+            def converge_legacy_group_policy_schema(self):
+                order.append("converge")
+                return {
+                    "from_version": 3,
+                    "to_version": 2,
+                    "backup_path": "backup.sqlite3",
+                    "changed": True,
+                }
+
+        class FakePolicyService:
+            async def initialize(self, store):
+                order.append("policy")
+                return True
+
+        class FakeCache:
+            def __init__(self, *_args):
+                order.append("cache")
+
+            def cleanup_expired(self, **_kwargs):
+                return None
+
+        class FakeHoliday:
+            def __init__(self, *_args, **_kwargs):
+                order.append("holiday")
+
+            async def refresh_if_due(self):
+                return False
+
+        class FakeWebApi:
+            def register(self):
+                order.append("register")
+
+        plugin.group_safety_service = FakePolicyService()
+        plugin.plugin_web_api = FakeWebApi()
+
+        def discard_task(coro):
+            coro.close()
+            return Mock()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(main_module.StarTools, "get_data_dir", return_value=tmp),
+            patch.object(main_module, "ImageIndexStore", return_value=FakeImageIndex()),
+            patch.object(main_module, "CheckinStore", return_value=FakeStore()),
+            patch.object(main_module, "CheckinCardCache", FakeCache),
+            patch.object(main_module, "HolidayCalendar", FakeHoliday),
+            patch.object(main_module.asyncio, "create_task", side_effect=discard_task),
+            patch.object(main_module, "logger") as logger,
+        ):
+            await plugin.initialize()
+
+        self.assertLess(order.index("policy"), order.index("converge"))
+        self.assertLess(order.index("converge"), order.index("cache"))
+        self.assertLess(order.index("cache"), order.index("register"))
+        log_text = "\n".join(str(call.args[0]) for call in logger.info.call_args_list)
+        self.assertIn("from_version=3", log_text)
+        self.assertIn("to_version=2", log_text)
+        self.assertIn("backup_path=backup.sqlite3", log_text)
+
+    async def test_initialize_skips_convergence_when_policy_migration_fails(self):
+        plugin = object.__new__(GetPxPlugin)
+        plugin.config = {}
+        plugin.context = SimpleNamespace()
+        plugin._migrate_grouped_config = Mock()
+        plugin._migrate_dedupe_config = Mock(return_value=1)
+        plugin._init_client = Mock()
+        plugin._cfg_bool = Mock(return_value=False)
+        order = []
+
+        class FakeIndex:
+            async def cleanup_old_days(self, *, trigger="manual"):
+                return None
+
+        class FakeStore:
+            _db_path = Path("checkin.sqlite3")
+
+            def converge_legacy_group_policy_schema(self):
+                order.append("converge")
+                raise AssertionError("convergence must be skipped")
+
+        class FakePolicy:
+            async def initialize(self, _store):
+                return False
+
+        plugin.group_safety_service = FakePolicy()
+        plugin.plugin_web_api = SimpleNamespace(register=Mock())
+        fake_cache = SimpleNamespace(cleanup_expired=Mock())
+        fake_holiday = SimpleNamespace(refresh_if_due=AsyncMock(return_value=False))
+
+        def discard_task(coro):
+            coro.close()
+            return Mock()
+
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(main_module.StarTools, "get_data_dir", return_value=tmp),
+            patch.object(main_module, "ImageIndexStore", return_value=FakeIndex()),
+            patch.object(main_module, "CheckinStore", return_value=FakeStore()),
+            patch.object(main_module, "CheckinCardCache", return_value=fake_cache),
+            patch.object(main_module, "HolidayCalendar", return_value=fake_holiday),
+            patch.object(main_module.asyncio, "create_task", side_effect=discard_task),
+        ):
+            await plugin.initialize()
+        self.assertEqual(order, [])
+
+    async def test_initialize_stops_after_convergence_failure(self):
+        plugin = object.__new__(GetPxPlugin)
+        plugin.config = {}
+        plugin.context = SimpleNamespace()
+        plugin._migrate_grouped_config = Mock()
+        plugin._migrate_dedupe_config = Mock(return_value=1)
+        plugin._init_client = Mock()
+        plugin._cfg_bool = Mock(return_value=False)
+        plugin.plugin_web_api = SimpleNamespace(register=Mock())
+        order = []
+
+        class FakeIndex:
+            async def cleanup_old_days(self, *, trigger="manual"):
+                return None
+
+        class FakeStore:
+            _db_path = Path("checkin.sqlite3")
+
+            def converge_legacy_group_policy_schema(self):
+                order.append("converge")
+                raise RuntimeError("convergence failed")
+
+        class FakePolicy:
+            async def initialize(self, _store):
+                return True
+
+        plugin.group_safety_service = FakePolicy()
+        with (
+            tempfile.TemporaryDirectory() as tmp,
+            patch.object(main_module.StarTools, "get_data_dir", return_value=tmp),
+            patch.object(main_module, "ImageIndexStore", return_value=FakeIndex()),
+            patch.object(main_module, "CheckinStore", return_value=FakeStore()),
+            patch.object(main_module, "logger") as logger,
+        ):
+            with self.assertRaisesRegex(RuntimeError, "convergence failed"):
+                await plugin.initialize()
+        self.assertEqual(order, ["converge"])
+        plugin.plugin_web_api.register.assert_not_called()
+        error_text = "\n".join(
+            str(call.args[0]) for call in logger.error.call_args_list
+        )
+        self.assertIn("会话策略数据库收敛失败", error_text)
+        self.assertIn("error_type=RuntimeError", error_text)
 
     async def test_auto_trigger_stops_event_before_search(self):
         plugin = object.__new__(GetPxPlugin)
