@@ -199,6 +199,8 @@ WebUI 配置页按以下 6 组折叠展示，分组细节与维护规则见 [doc
 | `filter_manga` | 过滤 Pixiv 回退结果中的漫画作品 | `true` |
 | `max_count` | 单次最大发送数量，范围 1-20 | `5` |
 | `dedupe_days` | 最近 `0–7` 个北京时间自然日去重；`0` 为关闭并清空去重索引 | `1` |
+| `group_content_safety_policies` | 群聊内容安全策略列表：强制普通分级、内置安全词开关与独立屏蔽词/作品 ID 黑名单，按群 ID 生效；配置页或管理中心均可维护 | `[]` |
+| `private_content_safety_policies` | 私聊内容安全策略列表：字段同群聊策略，按用户 ID 独立生效；配置页或管理中心均可维护 | `[]` |
 | `request_timeout` | 单张图片下载超时，单位秒 | `30` |
 | `image_quality` | 图片质量：`original`、`large`、`medium` | `original` |
 | `auto_downgrade_original_mb` | 原图超过该大小时自动降级，单位 MiB；`0` 为禁用 | `3.0` |
@@ -211,6 +213,7 @@ WebUI 配置页按以下 6 组折叠展示，分组细节与维护规则见 [doc
 | `checkin_theme_cost` | 非默认签到主题的统一价格；范围 `0–5000`，`0` 为免费 | `1500` |
 | `checkin_omnidraw_link_enabled` | 万象画卷联动总开关，默认关闭；开启后才会启用签到商店出售生图额度、签到发放额度、`/签到状态` 展示额度等全部联动功能 | `false` |
 | `checkin_omnidraw_quota_cost` | 签到商店购买生图额度的单张价格；范围 `0–300`，`0` 为免费；购买时指定张数，实际花费 = 单价 × 张数 | `75` |
+| `checkin_omnidraw_quota_default` | 商店购买生图额度不指定张数时的默认购买张数；范围 `1–50` | `1` |
 | `checkin_background_tag` | 签到背景标签；留空时 Lolicon 随机取图，失败后使用 Pixiv 推荐作品 | 空 |
 | `checkin_custom_background` | 本地图片路径；默认主题按竖向作品相框完整显示 | 空 |
 | `checkin_avatar_enabled` | 签到卡片显示用户头像 | `true` |
