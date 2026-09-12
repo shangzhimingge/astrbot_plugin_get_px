@@ -54,8 +54,7 @@ class PluginWebApi:
         self.internal_error_message = internal_error_message
         self._registered_routes: list[tuple[str, object, tuple[str, ...]]] = []
 
-    def __getattr__(self, name:
-        str) -> Any:
+    def __getattr__(self, name: str) -> Any:
         return getattr(self.plugin, name)
 
     def register(self) -> None:
@@ -175,8 +174,7 @@ class PluginWebApi:
         unregister_web_apis(self.context, tuple(self._registered_routes))
         self._registered_routes.clear()
 
-    def internal_error(self, action:
-        str, exc: Exception):
+    def internal_error(self, action: str, exc: Exception):
         logger.error(
             f"{self.log_prefix} Web API {action}失败: "
             f"error_type={type(exc).__name__}"
@@ -630,8 +628,7 @@ class PluginWebApi:
         finally:
             cleanup(temp_path)
 
-    async def _thumbnail_is_safe(self, illust:
-        dict[str, Any]) -> bool:
+    async def _thumbnail_is_safe(self, illust: dict[str, Any]) -> bool:
         if int(illust.get("x_restrict", 0) or 0) != 0:
             return False
         try:
@@ -812,8 +809,7 @@ class PluginWebApi:
             return self.internal_error("清理缓存数据", exc)
 
     @staticmethod
-    def _format_bytes(size:
-        int) -> str:
+    def _format_bytes(size: int) -> str:
         if size < 1024:
             return f"{size} B"
         if size < 1024 * 1024:
@@ -944,8 +940,7 @@ class PluginWebApi:
             .isoformat(timespec="seconds")
         )
 
-    async def _require_known_group(self, value:
-        object) -> str:
+    async def _require_known_group(self, value: object) -> str:
         group_id = str(value or "").strip()
         if not group_id:
             raise ValueError("缺少 group_id")
@@ -955,8 +950,7 @@ class PluginWebApi:
         return group_id
 
     @staticmethod
-    def _parse_int(value:
-        object, minimum: int, maximum: int) -> int:
+    def _parse_int(value: object, minimum: int, maximum: int) -> int:
         try:
             parsed = int(str(value))
         except (TypeError, ValueError) as exc:
@@ -971,8 +965,7 @@ class PluginWebApi:
         return payload if isinstance(payload, dict) else None
 
     @staticmethod
-    def _parse_profile_integer(value:
-        object, label: str) -> int:
+    def _parse_profile_integer(value: object, label: str) -> int:
         try:
             if isinstance(value, bool):
                 raise ValueError
@@ -984,8 +977,7 @@ class PluginWebApi:
         return parsed
 
     @staticmethod
-    def _parse_profile_affection(value:
-        object) -> float:
+    def _parse_profile_affection(value: object) -> float:
         try:
             if isinstance(value, bool):
                 raise ValueError
@@ -999,8 +991,7 @@ class PluginWebApi:
         return round(parsed, 2)
 
     @staticmethod
-    def _normalize_request_ids(value:
-        object) -> list[str]:
+    def _normalize_request_ids(value: object) -> list[str]:
         if not isinstance(value, list):
             return []
         result: list[str] = []
@@ -1016,8 +1007,7 @@ class PluginWebApi:
         return result
 
     @staticmethod
-    def _encode_thumb_data_urls(paths:
-        dict[str, object]) -> dict[str, str]:
+    def _encode_thumb_data_urls(paths: dict[str, object]) -> dict[str, str]:
         result: dict[str, str] = {}
         for record_id, path in paths.items():
             try:
@@ -1028,6 +1018,5 @@ class PluginWebApi:
         return result
 
     @staticmethod
-    def _unavailable(message:
-        str = "插件数据尚未初始化"):
+    def _unavailable(message: str = "插件数据尚未初始化"):
         return jsonify({"success": False, "error": message}), 503

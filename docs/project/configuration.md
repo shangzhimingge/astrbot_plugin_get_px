@@ -25,6 +25,9 @@
 | `dedupe_days` | `int` | `1` | 按北京时间自然日去重，0–7；0 关闭并清空记录。同群共享，缩短天数会在重载时清理超期记录 |
 | `dedupe_ttl_hours` | `float` | `24.0` | 旧版去重配置（迁移用，隐藏） |
 | `dedupe_days_migrated` | `bool` | `false` | 去重配置迁移标记（隐藏） |
+| `group_content_safety_policies` | `template_list` | `[]` | 群聊内容安全策略：强制普通分级、内置安全词开关、独立自定义屏蔽词与独立作品 ID 黑名单，按群 ID 生效；建议在管理中心维护 |
+| `private_content_safety_policies` | `template_list` | `[]` | 私聊内容安全策略：字段同群聊策略，按用户 ID 独立生效；建议在管理中心维护 |
+| `group_content_safety_policies_migrated` | `bool` | `false` | 会话策略迁移标记（隐藏） |
 
 ## 3. 万象画卷联动（`checkin_omnidraw`）
 
